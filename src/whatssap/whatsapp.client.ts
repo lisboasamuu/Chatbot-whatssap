@@ -1,6 +1,6 @@
 import { Client, LocalAuth } from 'whatsapp-web.js';
 
-import { registerWhatsAppEvents } from './whatsapp-events.js';
+import { registerWhatsAppEvents } from './whatsapp.events.js';
 
 const AUTH_DATA_PATH = '.wwebjs_auth';
 
