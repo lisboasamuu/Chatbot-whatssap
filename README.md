@@ -1,612 +1,734 @@
-# Fase 1 — Motor de Conversação
-Autor: Samuel Lisboa
+# Chatbot WhatsApp — Fase 2: PostgreSQL
+Criado por Samuel Lisboa
 
-Implementação da **Fase 1** do projeto de atendimento e automação via WhatsApp.
+## Visão geral
 
-Nesta fase foi introduzido um **Motor de Conversação determinístico e desacoplado do WhatsApp**, responsável por processar mensagens normalizadas, manter o estado temporário de cada conversa e produzir respostas.
+Este projeto é um chatbot de atendimento via WhatsApp desenvolvido de forma incremental.
 
-A integração construída na Fase 0 foi preservada.
+Roadmap atual:
+
+```text
+FASE 0
+WhatsApp funcionando
+        ↓
+FASE 1
+Motor de Conversação
+        ↓
+FASE 2
+PostgreSQL
+        ↓
+FASE 3
+Agendamentos
+```
+
+A **Fase 2** adiciona persistência PostgreSQL ao chatbot já funcional, utilizando **Prisma ORM**.
+
+O objetivo desta fase é permitir que o estado das conversas e o histórico básico de mensagens sobrevivam à reinicialização da aplicação.
 
 ---
 
-## Objetivo
+## Stack
 
-Separar as regras de conversação da integração com `whatsapp-web.js`.
-
-O fluxo da aplicação passa a ser:
-
-```text
-WhatsApp
-   ↓
-WhatsApp Layer
-   ↓
-Normalização da mensagem
-   ↓
-Conversation Engine
-   ↓
-Estado da conversa
-   ↓
-Resposta
-   ↓
-WhatsApp
-```
-
-A camada WhatsApp continua responsável apenas pela comunicação com o WhatsApp.
-
-O Motor de Conversação é responsável por:
-
-* receber mensagens normalizadas;
-* identificar o estado atual da conversa;
-* validar a entrada;
-* executar regras determinísticas;
-* realizar transições de estado;
-* produzir uma resposta;
-* atualizar o estado temporário da conversa.
+* Node.js
+* TypeScript
+* npm
+* ESLint
+* EditorConfig
+* whatsapp-web.js
+* PostgreSQL
+* Prisma ORM
+* @prisma/client
 
 ---
 
 ## Arquitetura
 
-A estrutura relevante do projeto passa a ser:
+O WhatsApp continua sendo apenas a camada de entrada e saída.
+
+A lógica de conversação não depende diretamente de `whatsapp-web.js` nem de Prisma.
+
+Fluxo atual:
 
 ```text
-src/
-├── index.ts
-│
-├── conversation/
-│   ├── conversation.types.ts
-│   ├── conversation.store.ts
-│   ├── conversation.engine.ts
-│   └── conversation.engine.test.ts
-│
-└── whatsapp/
-    ├── whatsapp.client.ts
-    └── whatsapp.events.ts
+WhatsApp
+   ↓
+WhatsApp Events
+   ↓
+ConversationEngine
+   ↓
+ConversationStore
+   ↓
+PrismaConversationStore
+   ↓
+Prisma
+   ↓
+PostgreSQL
 ```
 
-### `conversation.types.ts`
-
-Contém os tipos utilizados internamente pelo Motor de Conversação.
-
-Entre eles:
-
-* estado da conversa;
-* entrada normalizada;
-* resultado do processamento;
-* sessão armazenada em memória.
-
-Nenhum desses tipos depende de `whatsapp-web.js`.
-
----
-
-### `conversation.store.ts`
-
-Responsável pelo armazenamento temporário do estado das conversas.
-
-Nesta fase o armazenamento utiliza:
-
-```text
-Map<string, ConversationSession>
-```
-
-Cada conversa é identificada pelo seu `conversationId`.
-
-O estado existe apenas em memória.
-
-Portanto:
-
-> Reiniciar a aplicação apaga os estados das conversas.
-
-Isso é comportamento esperado na Fase 1.
-
-A persistência permanente pertence a uma fase posterior.
-
----
-
-### `conversation.engine.ts`
-
-Contém a máquina de estados e as regras de conversação.
-
-O engine recebe dados internos simples, conceitualmente:
-
-```ts
-{
-  conversationId,
-  text,
-  type
-}
-```
-
-e retorna:
-
-```ts
-{
-  reply,
-  state
-}
-```
-
-O engine:
-
-* não importa `whatsapp-web.js`;
-* não cria clientes WhatsApp;
-* não envia mensagens diretamente;
-* não acessa banco de dados;
-* não conhece QR Code ou autenticação;
-* não depende de infraestrutura externa.
-
-Isso permite testar toda a lógica conversacional sem iniciar o WhatsApp.
-
----
-
-### `whatsapp.events.ts`
-
-Continua responsável pelos eventos provenientes do WhatsApp.
-
-Para mensagens recebidas, sua responsabilidade agora é:
-
-```text
-receber evento
-→ validar evento
-→ normalizar mensagem
-→ chamar ConversationEngine
-→ receber resultado
-→ enviar resposta
-```
-
-As regras da máquina de estados não ficam no listener do WhatsApp.
-
-Os eventos existentes da Fase 0 foram preservados, incluindo:
-
-* QR Code;
-* autenticação;
-* cliente pronto;
-* falha de autenticação;
-* mensagem recebida;
-* desconexão.
-
----
-
-## Máquina de estados
-
-A Fase 1 utiliza uma máquina de estados mínima:
-
-```text
-INITIAL
-   │
-   │ mensagem textual válida
-   ▼
-ACTIVE
-   │
-   │ novas mensagens válidas
-   └──────────────► ACTIVE
-```
-
-### `INITIAL`
-
-Estado inicial de toda nova conversa.
-
-Quando uma mensagem textual válida é processada:
-
-```text
-INITIAL → ACTIVE
-```
-
-### `ACTIVE`
-
-Indica que a conversa já foi iniciada.
-
-Novas mensagens válidas mantêm:
-
-```text
-ACTIVE → ACTIVE
-```
-
-Nenhum estado relacionado a agendamento, serviços, pagamentos ou IA foi criado nesta fase.
-
----
-
-## Estado por conversa
-
-Cada `conversationId` possui estado independente.
-
-Exemplo:
-
-```text
-Usuário A → ACTIVE
-Usuário B → INITIAL
-```
-
-Uma conversa não interfere no estado de outra.
-
-O armazenamento é realizado pelo `ConversationStore`.
-
----
-
-## Comportamento atual
-
-### Mensagem textual válida
-
-Uma mensagem válida recebe:
-
-```text
-Olá! Sua mensagem foi recebida com sucesso.
-```
-
-Esse comportamento preserva a resposta utilizada na Fase 0.
-
-Na primeira mensagem válida:
-
-```text
-INITIAL → ACTIVE
-```
-
-Nas mensagens seguintes:
-
-```text
-ACTIVE → ACTIVE
-```
-
----
-
-## Entradas inválidas
-
-Entradas como:
-
-```text
-""
-"   "
-```
-
-não causam exceções.
-
-O motor retorna:
-
-```text
-Desculpe, não entendi.
-```
-
-Uma entrada inválida também não avança uma conversa `INITIAL` para `ACTIVE`.
-
----
-
-## Mensagens não suportadas
-
-Tipos de mensagem ainda não suportados pelo Motor de Conversação utilizam o fallback:
-
-```text
-Desculpe, não entendi.
-```
-
-Não foi implementado processamento avançado de mídia nesta fase.
-
----
-
-## Proteção contra loops e eventos indesejados
-
-A camada WhatsApp continua ignorando eventos que não devem entrar no Motor de Conversação, incluindo:
-
-* mensagens enviadas pelo próprio cliente;
-* mensagens de status;
-* mensagens de grupos.
-
-Isso evita respostas duplicadas e loops causados pelas próprias mensagens enviadas pela aplicação.
-
----
-
-## Tratamento de erros
-
-Erros de entrada são tratados pelo próprio Motor de Conversação através de respostas controladas.
-
-Erros técnicos inesperados são capturados na fronteira da integração.
-
-O usuário recebe uma mensagem genérica:
-
-```text
-Desculpe, ocorreu um erro ao processar sua mensagem.
-```
-
-Detalhes técnicos são registrados apenas no terminal.
-
-Falhas ao enviar mensagens pelo WhatsApp também são tratadas separadamente.
-
-O Motor de Conversação não implementa retry de rede.
-
----
-
-## Instalação
-
-Instale as dependências existentes do projeto:
-
-```bash
-npm install
-```
-
-A Fase 1 não adiciona frameworks, banco de dados ou bibliotecas de máquina de estados.
-
----
-
-## Build
-
-Compile o projeto:
-
-```bash
-npm run build
-```
-
----
-
-## Lint
-
-Execute:
-
-```bash
-npm run lint
-```
-
----
-
-## Testes automatizados
-
-Execute:
-
-```bash
-npm test
-```
-
-Os testes do Motor de Conversação utilizam recursos nativos do Node.js:
-
-* `node:test`;
-* `node:assert`.
-
-Não foi necessário adicionar Jest ou Vitest.
-
-### Cenários cobertos
-
-Os testes verificam:
-
-1. criação de uma nova conversa;
-2. transição `INITIAL → ACTIVE`;
-3. manutenção de uma conversa `ACTIVE`;
-4. isolamento entre diferentes `conversationId`;
-5. texto vazio;
-6. texto contendo apenas espaços;
-7. mensagem não suportada;
-8. execução do engine sem criar um cliente WhatsApp.
-
-O Motor de Conversação pode, portanto, ser testado sem autenticar ou inicializar o WhatsApp.
-
----
-
-## Desenvolvimento
-
-Inicie a aplicação normalmente:
-
-```bash
-npm run dev
-```
-
-Quando existir uma sessão válida da Fase 0, o `LocalAuth` reutiliza a autenticação armazenada.
-
-Exemplo de inicialização:
-
-```text
-[WhatsApp] Inicializando cliente...
-[WhatsApp] Autenticado.
-[WhatsApp] Cliente conectado e pronto.
-```
-
----
-
-## Teste manual
-
-### Primeira mensagem
-
-Envie uma mensagem textual para a conta conectada.
-
-O terminal deve registrar o recebimento e o processamento:
-
-```text
-[WhatsApp] Mensagem recebida: {
-  from: '...',
-  type: 'chat'
-}
-
-[Conversation] Mensagem processada: {
-  conversationId: '...',
-  state: 'ACTIVE'
-}
-```
-
-O usuário deve receber:
-
-```text
-Olá! Sua mensagem foi recebida com sucesso.
-```
-
-Isso confirma:
-
-```text
-INITIAL → ACTIVE
-```
-
----
-
-### Segunda mensagem
-
-Envie outra mensagem utilizando o mesmo usuário.
-
-A conversa deve continuar:
-
-```text
-ACTIVE → ACTIVE
-```
-
-sem voltar para `INITIAL`.
-
----
-
-### Dois usuários
-
-Utilize dois números diferentes.
-
-Fluxo esperado:
-
-```text
-Usuário A
-→ primeira mensagem
-→ ACTIVE
-
-Usuário B
-→ primeira mensagem
-→ ACTIVE
-
-Usuário A
-→ segunda mensagem
-→ continua ACTIVE
-```
-
-Os estados devem permanecer independentes.
+A persistência foi introduzida sem recriar o Motor de Conversação existente.
 
 ---
 
 ## Persistência
 
-Existem dois tipos diferentes de estado no projeto.
+A Fase 2 persiste três conceitos principais:
 
-### Sessão WhatsApp
+### Customer
 
-A autenticação do WhatsApp continua sendo gerenciada pelo `LocalAuth`.
+Representa a identidade externa do usuário no WhatsApp.
 
-Ela é persistida localmente e pode ser reutilizada após reiniciar a aplicação enquanto continuar válida.
-
-Os arquivos de autenticação não devem ser versionados.
-
-### Estado da conversa
-
-O estado do Motor de Conversação existe somente em memória.
+Principais campos:
 
 ```text
+id
+externalId
+createdAt
+updatedAt
+```
+
+O `externalId` é único, impedindo a criação duplicada de clientes para o mesmo identificador do WhatsApp.
+
+---
+
+### Conversation
+
+Representa o contexto persistente utilizado pelo Motor de Conversação.
+
+Principais campos:
+
+```text
+id
+customerId
+state
+createdAt
+updatedAt
+```
+
+A máquina de estados existente da Fase 1 foi preservada.
+
+Estados atuais:
+
+```text
+INITIAL
+ACTIVE
+```
+
+Nenhum estado relacionado a agendamento foi adicionado nesta fase.
+
+---
+
+### Message
+
+Representa o histórico textual básico da conversa.
+
+Principais campos:
+
+```text
+id
+conversationId
+direction
+body
+createdAt
+```
+
+Direções disponíveis:
+
+```text
+INBOUND
+OUTBOUND
+```
+
+Nesta fase não são persistidos:
+
+* anexos;
+* áudio;
+* mídia;
+* transcrição;
+* status de leitura;
+* analytics;
+* embeddings.
+
+---
+
+## Estrutura relevante
+
+```text
+prisma/
+├── schema.prisma
+└── migrations/
+    └── 20260825000000_add_conversation_persistence/
+        └── migration.sql
+
+src/
+├── conversation/
+│   ├── conversation.engine.ts
+│   ├── conversation.store.ts
+│   ├── conversation.types.ts
+│   └── conversation.engine.test.ts
+│
+├── database/
+│   ├── prisma.client.ts
+│   └── prisma-conversation.store.ts
+│
+├── whatssap/
+│   ├── whatsapp.client.ts
+│   └── whatsapp.events.ts
+│
+└── index.ts
+```
+
+> O diretório `src/whatssap` mantém o nome já existente no projeto. Ele não foi renomeado nesta fase para evitar uma refatoração sem relação direta com PostgreSQL.
+
+---
+
+## Pré-requisitos
+
+Antes de executar o projeto, tenha instalado:
+
+* Node.js
+* npm
+* PostgreSQL
+
+Confira as versões:
+
+```bash
+node --version
+npm --version
+psql --version
+```
+
+---
+
+## Instalação
+
+Clone o projeto ou acesse o diretório existente:
+
+```bash
+cd Chatbot-whatssap
+```
+
+Instale as dependências:
+
+```bash
+npm install
+```
+
+---
+
+## Variáveis de ambiente
+
+Crie um arquivo `.env` na raiz do projeto.
+
+Você pode usar `.env.example` como referência:
+
+```bash
+cp .env.example .env
+```
+
+Configure:
+
+```env
+DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/chatbot?schema=public"
+```
+
+Exemplo:
+
+```env
+DATABASE_URL="postgresql://postgres:SUA_SENHA@localhost:5432/chatbot?schema=public"
+```
+
+Não versione o arquivo `.env`.
+
+O `.gitignore` deve proteger:
+
+```text
+.env
+.wwebjs_auth/
+.wwebjs_cache/
+node_modules/
+dist/
+```
+
+---
+
+## Prisma
+
+### Validar o schema
+
+```bash
+npx prisma validate
+```
+
+Resultado esperado:
+
+```text
+The schema at prisma/schema.prisma is valid
+```
+
+---
+
+### Gerar Prisma Client
+
+```bash
+npx prisma generate
+```
+
+---
+
+### Aplicar migrations
+
+```bash
+npx prisma migrate dev
+```
+
+Na primeira execução, o banco poderá ser criado automaticamente caso o usuário PostgreSQL configurado possua permissão.
+
+Migration inicial da Fase 2:
+
+```text
+20260825000000_add_conversation_persistence
+```
+
+---
+
+## Scripts de banco
+
+Scripts disponíveis:
+
+```bash
+npm run db:generate
+npm run db:migrate
+npm run db:studio
+```
+
+### Prisma Studio
+
+Para visualizar os dados:
+
+```bash
+npm run db:studio
+```
+
+Por padrão:
+
+```text
+http://localhost:5555
+```
+
+No Prisma Studio estarão disponíveis:
+
+```text
+Customer
+Conversation
+Message
+```
+
+---
+
+## Executando o projeto
+
+Modo desenvolvimento:
+
+```bash
+npm run dev
+```
+
+O fluxo normal do WhatsApp continua sendo utilizado.
+
+Caso exista sessão válida em:
+
+```text
+.wwebjs_auth/
+```
+
+o cliente deverá reutilizá-la.
+
+Caso contrário, o processo de autenticação/QR existente continua funcionando.
+
+---
+
+## Validação
+
+Antes de considerar a Fase 2 concluída, execute:
+
+```bash
+npm run build
+npm run lint
+npm test
+```
+
+Também valide Prisma:
+
+```bash
+npx prisma validate
+npx prisma generate
+npx prisma migrate dev
+```
+
+---
+
+## Testes manuais
+
+### Teste 1 — Banco vazio
+
+1. Garanta que PostgreSQL esteja disponível.
+2. Aplique as migrations.
+3. Inicie a aplicação.
+4. Conecte o WhatsApp.
+5. Envie a primeira mensagem.
+
+Esperado:
+
+```text
+1 Customer
+1 Conversation
+1 Message INBOUND
+1 resposta no WhatsApp
+1 Message OUTBOUND
+```
+
+---
+
+### Teste 2 — Mesmo usuário
+
+Envie várias mensagens pelo mesmo número.
+
+Esperado:
+
+```text
+Customer: 1
+Conversation: 1
+Messages: N
+```
+
+O mesmo usuário não deve gerar Customers duplicados.
+
+---
+
+### Teste 3 — Usuários diferentes
+
+Envie mensagens utilizando dois números diferentes.
+
+Esperado:
+
+```text
+2 Customers
+2 Conversations independentes
+```
+
+O estado de uma conversa não deve afetar a outra.
+
+---
+
+### Teste 4 — Reinicialização
+
+1. Inicie uma conversa.
+2. Provoque uma transição real da máquina de estados.
+3. Verifique no banco que o estado foi alterado.
+4. Encerre a aplicação com `Ctrl+C`.
+5. Execute novamente:
+
+```bash
+npm run dev
+```
+
+6. Envie nova mensagem pelo mesmo número.
+
+Esperado:
+
+O Motor de Conversação deve recuperar o estado existente no PostgreSQL em vez de começar novamente do estado inicial.
+
+---
+
+### Teste 5 — Mensagem inválida
+
+Envie:
+
+```text
+xyzabc123
+```
+
+Esperado:
+
+```text
+Desculpe, não entendi.
+```
+
+ou o fallback equivalente já existente na Fase 1.
+
+A mensagem deve continuar sendo persistida normalmente.
+
+---
+
+### Teste 6 — PostgreSQL indisponível
+
+1. Inicie normalmente a aplicação.
+2. Pare o PostgreSQL.
+3. Envie uma mensagem.
+
+Esperado:
+
+* aplicação não encerra abruptamente;
+* erro é registrado no terminal;
+* credenciais ou detalhes internos não são enviados ao usuário;
+* nenhuma falsa confirmação é produzida;
+* o usuário recebe uma mensagem técnica genérica.
+
+---
+
+### Teste 7 — Regressão WhatsApp
+
+Com PostgreSQL novamente disponível, confirme:
+
+* autenticação WhatsApp funcionando;
+* sessão existente funcionando;
+* QR funcionando quando necessário;
+* mensagens sendo recebidas;
+* respostas sendo enviadas;
+* eventos existentes funcionando;
+* encerramento funcionando normalmente.
+
+---
+
+## Fluxo de uma mensagem
+
+O fluxo implementado nesta fase é:
+
+```text
+1. WhatsApp recebe mensagem
+
+2. Camada WhatsApp extrai:
+   - identificador externo
+   - texto
+
+3. ConversationEngine recebe a entrada
+
+4. ConversationStore procura/cria Customer
+
+5. Conversation é carregada ou criada
+
+6. Estado persistido é recuperado
+
+7. Mensagem INBOUND é registrada
+
+8. Motor de Conversação executa a lógica existente
+
+9. Próximo estado é determinado
+
+10. Estado é persistido
+
+11. Resposta retorna para a camada WhatsApp
+
+12. WhatsApp envia a resposta
+
+13. Após envio bem-sucedido, Message OUTBOUND é registrada
+```
+
+A mensagem `OUTBOUND` é persistida após o envio pelo WhatsApp para evitar registrar como enviada uma resposta que apenas foi gerada internamente.
+
+---
+
+## Separação de responsabilidades
+
+### WhatsApp
+
+Responsável por:
+
+* receber mensagens;
+* extrair remetente;
+* extrair conteúdo;
+* chamar o Motor de Conversação;
+* enviar respostas;
+* tratar erros da integração.
+
+A camada WhatsApp não acessa Prisma diretamente.
+
+---
+
+### Conversation
+
+Responsável por:
+
+* interpretar entradas;
+* executar a máquina de estados;
+* gerar respostas;
+* solicitar carregamento e persistência através de uma abstração.
+
+O Motor de Conversação não conhece `PrismaClient`.
+
+---
+
+### ConversationStore
+
+Define o contrato entre o Motor de Conversação e a persistência.
+
+Fluxo:
+
+```text
+ConversationEngine
+       ↓
 ConversationStore
-→ Map
-→ memória do processo
+       ↓
+PrismaConversationStore
 ```
 
-Ao reiniciar a aplicação:
-
-```text
-ACTIVE → perdido
-```
-
-Uma nova mensagem será tratada novamente como uma conversa `INITIAL`.
-
-Isso é intencional na Fase 1.
+Isso mantém a regra de negócio desacoplada da implementação PostgreSQL.
 
 ---
 
-## Validação realizada
+### Database
 
-A integração foi validada com uma conta WhatsApp real.
+Responsável por:
 
-Foram confirmados:
+* instanciar Prisma Client;
+* executar operações PostgreSQL;
+* persistir Customer;
+* persistir Conversation;
+* persistir Message;
+* carregar estado;
+* atualizar estado.
 
-* build TypeScript;
-* ESLint;
-* testes automatizados;
-* inicialização da aplicação;
-* reutilização da autenticação existente;
-* conexão do cliente;
-* recebimento de mensagens;
-* passagem da mensagem pelo Motor de Conversação;
-* transição para `ACTIVE`;
-* envio de respostas;
-* preservação do funcionamento da Fase 0.
+---
 
-Exemplo observado:
+## Concorrência básica
+
+`Customer.externalId` possui restrição de unicidade.
+
+A implementação utiliza operações idempotentes do Prisma para evitar duplicação de cliente quando mensagens do mesmo identificador chegam próximas.
+
+Não foi introduzido locking distribuído ou infraestrutura adicional.
+
+---
+
+## Segurança
+
+Credenciais não devem ser armazenadas diretamente no código.
+
+Utilize:
+
+```env
+DATABASE_URL
+```
+
+Não versione:
 
 ```text
-[WhatsApp] Inicializando cliente...
-[WhatsApp] Autenticado.
-[WhatsApp] Cliente conectado e pronto.
+.env
+```
 
-[WhatsApp] Mensagem recebida: {
-  from: '...',
-  type: 'chat'
-}
+Também não devem ser versionados:
 
-[Conversation] Mensagem processada: {
-  conversationId: '...',
-  state: 'ACTIVE'
-}
+```text
+.wwebjs_auth/
+.wwebjs_cache/
+```
+
+Esses diretórios podem conter dados relacionados à sessão do WhatsApp.
+
+---
+
+## Observação sobre npm audit
+
+Durante a instalação podem aparecer vulnerabilidades em dependências transitivas.
+
+Evite executar automaticamente:
+
+```bash
+npm audit fix --force
+```
+
+Esse comando pode alterar versões principais ou introduzir regressões em dependências críticas como Prisma e `whatsapp-web.js`.
+
+Analise atualizações de segurança separadamente e valide compatibilidade antes de aplicá-las.
+
+---
+
+## Git
+
+Branch da fase:
+
+```bash
+git checkout -b feat/postgresql-phase-2
+```
+
+Depois da validação:
+
+```bash
+git status
+git add .
+git commit -m "feat: add postgresql persistence layer"
+```
+
+Para publicar:
+
+```bash
+git push -u origin feat/postgresql-phase-2
 ```
 
 ---
 
-## Limitações atuais
+## Fase 2 concluída
 
-A Fase 1 é propositalmente simples.
-
-Ainda não existem:
-
-* persistência permanente do estado das conversas;
-* PostgreSQL;
-* Prisma;
-* agendamentos;
-* serviços ou profissionais;
-* calendário;
-* dashboard;
-* multiempresa;
-* pagamentos;
-* lembretes;
-* interpretação de linguagem natural;
-* OpenAI API;
-* LLM;
-* agentes;
-* analytics.
-
-Esses componentes pertencem às próximas fases do projeto.
-
----
-
-## Princípio arquitetural
-
-O WhatsApp é um canal de entrada e saída, não o núcleo das regras de conversação.
-
-A arquitetura atual mantém:
+Com esta fase, a arquitetura evoluiu de:
 
 ```text
-WhatsApp Layer
-      │
-      ▼
-Conversation Engine
-```
-
-O `ConversationEngine` não depende do WhatsApp.
-
-Isso significa que futuramente outro canal poderá fornecer uma entrada normalizada equivalente sem exigir que as regras da máquina de estados sejam reescritas.
-
----
-
-## Status
-
-**FASE 1 — CONCLUÍDA E VALIDADA**
-
-O projeto possui agora:
-
-```text
-FASE 0
-WhatsApp funcional
-        │
-        ▼
-FASE 1
+WhatsApp
+   ↓
 Motor de Conversação
-        │
-        ├── entrada normalizada
-        ├── máquina de estados
-        ├── estado independente por conversa
-        ├── armazenamento temporário em memória
-        ├── fallback determinístico
-        └── testes automatizados
+   ↓
+estado temporário
 ```
 
-A aplicação está preparada para avançar para a próxima fase do roadmap sem que funcionalidades dessa fase tenham sido antecipadas.
+para:
+
+```text
+WhatsApp
+   ↓
+Motor de Conversação
+   ↓
+ConversationStore
+   ↓
+Prisma
+   ↓
+PostgreSQL
+```
+
+O estado das conversas e o histórico textual básico deixam de depender exclusivamente da memória do processo.
+
+---
+
+## Fora de escopo
+
+Esta fase não implementa:
+
+* Agendamentos
+* Appointment
+* disponibilidade de horários
+* serviços/procedimentos
+* calendário
+* Dashboard
+* React
+* Multiempresa
+* Pagamentos
+* Lembretes
+* Redis
+* BullMQ
+* OpenAI
+* LLM
+* IA
+* Analytics
+* APIs HTTP administrativas
+
+Esses recursos pertencem às próximas fases do projeto.
+
+---
+
+## Próxima fase
+
+A próxima etapa do roadmap é:
+
+```text
+FASE 3 — Agendamentos
+```
+
+Ela deverá utilizar a persistência criada nesta fase como base, sem recriar a integração WhatsApp ou o Motor de Conversação.
