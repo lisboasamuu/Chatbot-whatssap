@@ -9,10 +9,12 @@ export interface ConversationInput {
 }
 
 export interface ConversationResult {
+  conversationId: string;
   reply: string;
   state: ConversationState;
 }
 
 export interface ConversationSession {
+  id: string;
   state: ConversationState;
 }

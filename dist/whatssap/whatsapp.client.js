@@ -7,7 +7,7 @@ const whatsapp_events_js_1 = require("./whatsapp.events.js");
 const AUTH_DATA_PATH = '.wwebjs_auth';
 class WhatsAppProvider {
     client;
-    constructor() {
+    constructor(conversationEngine) {
         this.client = new whatsapp_web_js_1.Client({
             authStrategy: new whatsapp_web_js_1.LocalAuth({
                 dataPath: AUTH_DATA_PATH,
@@ -16,7 +16,7 @@ class WhatsAppProvider {
                 headless: true,
             },
         });
-        (0, whatsapp_events_js_1.registerWhatsAppEvents)(this.client);
+        (0, whatsapp_events_js_1.registerWhatsAppEvents)(this.client, conversationEngine);
     }
     async initialize() {
         console.log('[WhatsApp] Inicializando cliente...');
@@ -28,6 +28,6 @@ class WhatsAppProvider {
     }
 }
 exports.WhatsAppProvider = WhatsAppProvider;
-function createWhatsAppProvider() {
-    return new WhatsAppProvider();
+function createWhatsAppProvider(conversationEngine) {
+    return new WhatsAppProvider(conversationEngine);
 }

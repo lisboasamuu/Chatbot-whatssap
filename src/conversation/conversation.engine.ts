@@ -1,4 +1,4 @@
-import { ConversationStore } from './conversation.store.js';
+import type { ConversationStore } from './conversation.store.js';
 import type {
   ConversationInput,
   ConversationResult,
@@ -9,57 +9,67 @@ export const FALLBACK_REPLY = 'Desculpe, não entendi.';
 export const DEFAULT_REPLY = 'Olá! Sua mensagem foi recebida com sucesso.';
 
 export class ConversationEngine {
-  public constructor(
-    private readonly store: ConversationStore = new ConversationStore(),
-  ) {}
+  public constructor(private readonly store: ConversationStore) {}
 
-  public handle(input: ConversationInput): ConversationResult {
-    const conversationId = input.conversationId.trim();
-    const currentState = this.getCurrentState(conversationId);
+  public async handle(input: ConversationInput): Promise<ConversationResult> {
+    const externalUserId = input.conversationId.trim();
 
-    if (!conversationId) {
+    if (!externalUserId) {
       return {
+        conversationId: '',
         reply: FALLBACK_REPLY,
-        state: currentState,
+        state: 'INITIAL',
       };
     }
 
+    const session = await this.store.getOrCreateSession(externalUserId);
     const messageType = input.type ?? 'text';
     const text = input.text?.trim() ?? '';
 
+    await this.store.saveMessage({
+      conversationId: session.id,
+      direction: 'INBOUND',
+      body: input.text ?? '',
+    });
+
     if (messageType !== 'text' || !text) {
       return {
+        conversationId: session.id,
         reply: FALLBACK_REPLY,
-        state: currentState,
+        state: session.state,
       };
     }
 
-    switch (currentState) {
-      case 'INITIAL':
-        return this.activateConversation(conversationId);
+    const nextState = this.transition(session.state);
 
-      case 'ACTIVE':
-        return {
-          reply: DEFAULT_REPLY,
-          state: 'ACTIVE',
-        };
+    if (nextState !== session.state) {
+      await this.store.updateState(session.id, nextState);
     }
-  }
-
-  private getCurrentState(conversationId: string): ConversationState {
-    if (!conversationId) {
-      return 'INITIAL';
-    }
-
-    return this.store.get(conversationId).state;
-  }
-
-  private activateConversation(conversationId: string): ConversationResult {
-    const session = this.store.setState(conversationId, 'ACTIVE');
 
     return {
+      conversationId: session.id,
       reply: DEFAULT_REPLY,
-      state: session.state,
+      state: nextState,
     };
+  }
+
+  public async recordOutbound(
+    conversationId: string,
+    body: string,
+  ): Promise<void> {
+    await this.store.saveMessage({
+      conversationId,
+      direction: 'OUTBOUND',
+      body,
+    });
+  }
+
+  private transition(currentState: ConversationState): ConversationState {
+    switch (currentState) {
+      case 'INITIAL':
+        return 'ACTIVE';
+      case 'ACTIVE':
+        return 'ACTIVE';
+    }
   }
 }
