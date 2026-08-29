@@ -1,4 +1,4 @@
-# Chatbot WhatsApp — Fase 2: PostgreSQL
+# Chatbot WhatsApp — Fase 3: Agendamentos
 Criado por Samuel Lisboa
 
 ## Visão geral
@@ -21,9 +21,9 @@ FASE 3
 Agendamentos
 ```
 
-A **Fase 2** adiciona persistência PostgreSQL ao chatbot já funcional, utilizando **Prisma ORM**.
+A **Fase 3** adiciona CRUD de agendamentos ao chatbot já persistente, preservando a integração WhatsApp e a infraestrutura PostgreSQL/Prisma das fases anteriores.
 
-O objetivo desta fase é permitir que o estado das conversas e o histórico básico de mensagens sobrevivam à reinicialização da aplicação.
+Cada agendamento representa apenas **data + horário**. Não há duração, serviço, profissional, timezone avançado ou configuração de horário comercial nesta fase.
 
 ---
 
@@ -50,19 +50,11 @@ A lógica de conversação não depende diretamente de `whatsapp-web.js` nem de 
 Fluxo atual:
 
 ```text
-WhatsApp
-   ↓
-WhatsApp Events
-   ↓
-ConversationEngine
-   ↓
-ConversationStore
-   ↓
-PrismaConversationStore
-   ↓
-Prisma
-   ↓
-PostgreSQL
+                   ┌→ ConversationStore ─→ PrismaConversationStore ─┐
+WhatsApp Events ─→ ConversationEngine                              ├→ PostgreSQL
+                   └→ AppointmentService ─→ AppointmentStore        │
+                                              ↓                    │
+                                      PrismaAppointmentStore ──────┘
 ```
 
 A persistência foi introduzida sem recriar o Motor de Conversação existente.
@@ -71,7 +63,7 @@ A persistência foi introduzida sem recriar o Motor de Conversação existente.
 
 ## Persistência
 
-A Fase 2 persiste três conceitos principais:
+A base persistente da Fase 2 foi preservada e a Fase 3 adiciona `Appointment`:
 
 ### Customer
 
@@ -100,6 +92,7 @@ Principais campos:
 id
 customerId
 state
+context
 createdAt
 updatedAt
 ```
@@ -111,11 +104,40 @@ Estados atuais:
 ```text
 INITIAL
 ACTIVE
+SCHEDULING_DATE
+SCHEDULING_TIME
+SCHEDULING_CONFIRMATION
+CANCELING_SELECT
+CANCELING_CONFIRMATION
+RESCHEDULING_SELECT
+RESCHEDULING_DATE
+RESCHEDULING_TIME
+RESCHEDULING_CONFIRMATION
 ```
 
-Nenhum estado relacionado a agendamento foi adicionado nesta fase.
+O campo `context` persiste somente dados temporários controlados do fluxo (`draftDate`, `draftTime` e `selectedAppointmentId`), permitindo continuar uma operação após reiniciar a aplicação.
 
 ---
+
+
+### Appointment
+
+Representa um agendamento pertencente a um `Customer`.
+
+Campos de negócio:
+
+```text
+id
+customerId
+date       // YYYY-MM-DD
+time       // HH:mm
+createdAt
+updatedAt
+```
+
+A combinação `(date, time)` possui constraint única no PostgreSQL. Nesta fase monoempresa, um slot pode ser ocupado por somente um agendamento globalmente.
+
+Cancelamento remove o registro e libera o slot. Remarcação atualiza o mesmo `Appointment`, preservando `id`, `customerId` e `createdAt`.
 
 ### Message
 
@@ -156,10 +178,17 @@ Nesta fase não são persistidos:
 prisma/
 ├── schema.prisma
 └── migrations/
-    └── 20260825000000_add_conversation_persistence/
+    ├── 20260825000000_add_conversation_persistence/
+    │   └── migration.sql
+    └── 20260828000000_add_appointments_phase_3/
         └── migration.sql
 
 src/
+├── appointments/
+│   ├── appointment.service.ts
+│   ├── appointment.store.ts
+│   └── appointment.types.ts
+│
 ├── conversation/
 │   ├── conversation.engine.ts
 │   ├── conversation.store.ts
@@ -168,7 +197,8 @@ src/
 │
 ├── database/
 │   ├── prisma.client.ts
-│   └── prisma-conversation.store.ts
+│   ├── prisma-conversation.store.ts
+│   └── prisma-appointment.store.ts
 │
 ├── whatssap/
 │   ├── whatsapp.client.ts
@@ -177,7 +207,7 @@ src/
 └── index.ts
 ```
 
-> O diretório `src/whatssap` mantém o nome já existente no projeto. Ele não foi renomeado nesta fase para evitar uma refatoração sem relação direta com PostgreSQL.
+> O diretório `src/whatssap` mantém o nome já existente no projeto. Ele não foi renomeado nesta fase para evitar uma refatoração sem relação direta com Agendamentos.
 
 ---
 
@@ -283,10 +313,11 @@ npx prisma migrate dev
 
 Na primeira execução, o banco poderá ser criado automaticamente caso o usuário PostgreSQL configurado possua permissão.
 
-Migration inicial da Fase 2:
+Migrations:
 
 ```text
 20260825000000_add_conversation_persistence
+20260828000000_add_appointments_phase_3
 ```
 
 ---
@@ -321,9 +352,87 @@ No Prisma Studio estarão disponíveis:
 Customer
 Conversation
 Message
+Appointment
 ```
 
 ---
+
+
+## Agendamentos — Fase 3
+
+Comandos determinísticos disponíveis em `ACTIVE`:
+
+```text
+agendar
+meus agendamentos
+agendamentos
+cancelar agendamento
+remarcar agendamento
+```
+
+Durante um fluxo de agendamento, use:
+
+```text
+sair
+voltar
+```
+
+para abandonar a operação e limpar o contexto temporário.
+
+Entrada de data:
+
+```text
+DD/MM/AAAA
+```
+
+Persistência normalizada:
+
+```text
+YYYY-MM-DD
+```
+
+Entrada e persistência de horário:
+
+```text
+HH:mm
+```
+
+Somente combinações futuras válidas são aceitas. Não há horário comercial nesta fase: qualquer slot futuro válido é permitido se `(date, time)` ainda não estiver ocupado.
+
+### Fluxo manual básico
+
+Criar:
+
+```text
+agendar
+30/08/2030
+14:30
+sim
+```
+
+Listar:
+
+```text
+meus agendamentos
+```
+
+Cancelar:
+
+```text
+cancelar agendamento
+1
+sim
+```
+
+Remarcar:
+
+```text
+remarcar agendamento
+1
+07/09/2030
+16:00
+sim
+```
 
 ## Executando o projeto
 
@@ -349,7 +458,7 @@ Caso contrário, o processo de autenticação/QR existente continua funcionando.
 
 ## Validação
 
-Antes de considerar a Fase 2 concluída, execute:
+Antes de considerar a Fase 3 concluída, execute:
 
 ```bash
 npm run build
@@ -585,8 +694,11 @@ Responsável por:
 * persistir Customer;
 * persistir Conversation;
 * persistir Message;
-* carregar estado;
-* atualizar estado.
+* persistir Appointment;
+* carregar estado e contexto;
+* atualizar estado e contexto;
+* aplicar ownership de Appointment nas operações sensíveis;
+* traduzir conflito de slot sem expor códigos internos do Prisma ao motor.
 
 ---
 
@@ -648,7 +760,7 @@ Analise atualizações de segurança separadamente e valide compatibilidade ante
 Branch da fase:
 
 ```bash
-git checkout -b feat/postgresql-phase-2
+git checkout -b feat/appointments-phase-3
 ```
 
 Depois da validação:
@@ -656,44 +768,22 @@ Depois da validação:
 ```bash
 git status
 git add .
-git commit -m "feat: add postgresql persistence layer"
+git commit -m "feat: implement appointment scheduling"
 ```
 
 Para publicar:
 
 ```bash
-git push -u origin feat/postgresql-phase-2
+git push -u origin feat/appointments-phase-3
 ```
 
 ---
 
-## Fase 2 concluída
+## Fase 3 implementada
 
-Com esta fase, a arquitetura evoluiu de:
+A persistência de conversas da Fase 2 foi preservada e agora o `ConversationEngine` também orquestra o `AppointmentService`, sem depender de Prisma ou de `whatsapp-web.js`.
 
-```text
-WhatsApp
-   ↓
-Motor de Conversação
-   ↓
-estado temporário
-```
-
-para:
-
-```text
-WhatsApp
-   ↓
-Motor de Conversação
-   ↓
-ConversationStore
-   ↓
-Prisma
-   ↓
-PostgreSQL
-```
-
-O estado das conversas e o histórico textual básico deixam de depender exclusivamente da memória do processo.
+A constraint global `(date, time)` deverá ser reavaliada quando Multiempresa for implementada; nenhum `companyId`/`tenantId` foi antecipado nesta fase.
 
 ---
 
@@ -701,10 +791,10 @@ O estado das conversas e o histórico textual básico deixam de depender exclusi
 
 Esta fase não implementa:
 
-* Agendamentos
-* Appointment
-* disponibilidade de horários
+* configuração de disponibilidade/horário comercial
 * serviços/procedimentos
+* duração de serviço
+* profissionais/funcionários
 * calendário
 * Dashboard
 * React
@@ -722,13 +812,3 @@ Esta fase não implementa:
 Esses recursos pertencem às próximas fases do projeto.
 
 ---
-
-## Próxima fase
-
-A próxima etapa do roadmap é:
-
-```text
-FASE 3 — Agendamentos
-```
-
-Ela deverá utilizar a persistência criada nesta fase como base, sem recriar a integração WhatsApp ou o Motor de Conversação.

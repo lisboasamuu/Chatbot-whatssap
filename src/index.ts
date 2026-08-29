@@ -1,4 +1,6 @@
+import { AppointmentService } from './appointments/appointment.service.js';
 import { ConversationEngine } from './conversation/conversation.engine.js';
+import { PrismaAppointmentStore } from './database/prisma-appointment.store.js';
 import {
   connectDatabase,
   disconnectDatabase,
@@ -8,8 +10,13 @@ import { PrismaConversationStore } from './database/prisma-conversation.store.js
 import { createWhatsAppProvider } from './whatssap/whatsapp.client.js';
 
 async function main(): Promise<void> {
-  const store = new PrismaConversationStore(prisma);
-  const conversationEngine = new ConversationEngine(store);
+  const conversationStore = new PrismaConversationStore(prisma);
+  const appointmentStore = new PrismaAppointmentStore(prisma);
+  const appointmentService = new AppointmentService(appointmentStore);
+  const conversationEngine = new ConversationEngine(
+    conversationStore,
+    appointmentService,
+  );
   const whatsapp = createWhatsAppProvider(conversationEngine);
   let shuttingDown = false;
 

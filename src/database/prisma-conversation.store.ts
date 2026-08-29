@@ -1,13 +1,36 @@
-import type { PrismaClient } from '@prisma/client';
+import { Prisma, type PrismaClient } from '@prisma/client';
 
 import type {
   ConversationStore,
   SaveMessageInput,
+  UpdateSessionInput,
 } from '../conversation/conversation.store.js';
-import type {
-  ConversationSession,
-  ConversationState,
+import {
+  parseConversationContext,
+  type ConversationContext,
+  type ConversationSession,
+  type ConversationState,
 } from '../conversation/conversation.types.js';
+
+function toPrismaContext(
+  context: ConversationContext | null,
+): Prisma.InputJsonValue | Prisma.NullTypes.DbNull {
+  if (context === null) {
+    return Prisma.DbNull;
+  }
+
+  return {
+    ...(context.draftDate !== undefined
+      ? { draftDate: context.draftDate }
+      : {}),
+    ...(context.draftTime !== undefined
+      ? { draftTime: context.draftTime }
+      : {}),
+    ...(context.selectedAppointmentId !== undefined
+      ? { selectedAppointmentId: context.selectedAppointmentId }
+      : {}),
+  } satisfies Prisma.InputJsonObject;
+}
 
 export class PrismaConversationStore implements ConversationStore {
   public constructor(private readonly prisma: PrismaClient) {}
@@ -26,14 +49,34 @@ export class PrismaConversationStore implements ConversationStore {
         where: { customerId: customer.id },
         update: {},
         create: { customerId: customer.id },
-        select: { id: true, state: true },
+        select: {
+          id: true,
+          customerId: true,
+          state: true,
+          context: true,
+        },
       });
     });
 
     return {
       id: conversation.id,
+      customerId: conversation.customerId,
       state: conversation.state as ConversationState,
+      context: parseConversationContext(conversation.context),
     };
+  }
+
+  public async updateSession(
+    conversationId: string,
+    input: UpdateSessionInput,
+  ): Promise<void> {
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: {
+        state: input.state,
+        context: toPrismaContext(input.context),
+      },
+    });
   }
 
   public async updateState(

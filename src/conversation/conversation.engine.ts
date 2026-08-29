@@ -1,15 +1,169 @@
+import type { AppointmentService } from '../appointments/appointment.service.js';
+import {
+  formatDateForDisplay,
+  isNormalizedDate,
+  isNormalizedTime,
+  parseDateInput,
+  parseTimeInput,
+  type Appointment,
+} from '../appointments/appointment.types.js';
 import type { ConversationStore } from './conversation.store.js';
 import type {
+  ConversationContext,
   ConversationInput,
   ConversationResult,
+  ConversationSession,
   ConversationState,
 } from './conversation.types.js';
 
 export const FALLBACK_REPLY = 'Desculpe, não entendi.';
-export const DEFAULT_REPLY = 'Olá! Sua mensagem foi recebida com sucesso.';
+
+//Atualizando a default reply para suportar mensagem mais profissional ao atendimento
+export const DEFAULT_REPLY = [
+  'Olá! 👋 Bem-vindo à Clínica Lisboa.',
+  '',
+  'Como posso ajudar?',
+  '',
+  '• Para agendar um horário, digite "agendar".',
+  '• Para consultar seus horários, digite "meus agendamentos".',
+  '• Para remarcar um horário, digite "remarcar agendamento".',
+  '• Para cancelar um horário, digite "cancelar agendamento".',
+  '',
+  'Durante uma operação, digite "sair" para voltar ao menu.',
+].join('\n');
+
+const FLOW_ABORTED_REPLY = 'Operação encerrada.';
+const FLOW_RECOVERY_REPLY =
+  'Não foi possível continuar a operação. Inicie novamente.';
+const INVALID_DATE_REPLY = 'Data inválida. Envie no formato DD/MM/AAAA.';
+const PAST_DATE_REPLY =
+  'A data deve ser hoje ou futura. Envie no formato DD/MM/AAAA.';
+const INVALID_TIME_REPLY = 'Horário inválido. Envie no formato HH:mm.';
+const PAST_SLOT_REPLY =
+  'Data e horário devem estar no futuro. Envie outro horário no formato HH:mm.';
+const YES_NO_REPLY = 'Responda "sim" ou "não".';
+const SLOT_UNAVAILABLE_REPLY =
+  'Esse horário já está ocupado. Envie outro horário no formato HH:mm.';
+
+const ACTIVE_COMMANDS = new Set([
+  'agendar',
+  'meus agendamentos',
+  'agendamentos',
+  'cancelar agendamento',
+  'remarcar agendamento',
+  'gostaria de marcar',
+  'quero marcar',
+  'marcar consulta'
+]);
+
+const FLOW_STATES = new Set<ConversationState>([
+  'SCHEDULING_DATE',
+  'SCHEDULING_TIME',
+  'SCHEDULING_CONFIRMATION',
+  'CANCELING_SELECT',
+  'CANCELING_CONFIRMATION',
+  'RESCHEDULING_SELECT',
+  'RESCHEDULING_DATE',
+  'RESCHEDULING_TIME',
+  'RESCHEDULING_CONFIRMATION',
+]);
+
+function normalizeCommand(text: string): string {
+  return text.toLocaleLowerCase('pt-BR').trim().replace(/\s+/g, ' ');
+}
+
+function isAffirmative(command: string): boolean {
+  return command === 'sim' || command === 's';
+}
+
+function isNegative(command: string): boolean {
+  return command === 'não' || command === 'nao' || command === 'n';
+}
+
+function isExitCommand(command: string): boolean {
+  return command === 'sair' || command === 'voltar';
+}
+
+function parseSelection(input: string, length: number): number | null {
+  if (!/^\d+$/.test(input)) {
+    return null;
+  }
+
+  const selected = Number(input);
+  if (!Number.isSafeInteger(selected) || selected < 1 || selected > length) {
+    return null;
+  }
+
+  return selected - 1;
+}
+
+function formatAppointment(appointment: Appointment): string {
+  return `${formatDateForDisplay(appointment.date)} às ${appointment.time}`;
+}
+
+function formatAppointmentList(appointments: Appointment[]): string {
+  return appointments
+    .map((appointment, index) => `${index + 1}. ${formatAppointment(appointment)}`)
+    .join('\n');
+}
+
+function hasDraftDate(
+  context: ConversationContext | null,
+): context is ConversationContext & { draftDate: string } {
+  return Boolean(context?.draftDate && isNormalizedDate(context.draftDate));
+}
+
+function hasDraftDateAndTime(
+  context: ConversationContext | null,
+): context is ConversationContext & { draftDate: string; draftTime: string } {
+  return Boolean(
+    context?.draftDate &&
+      context.draftTime &&
+      isNormalizedDate(context.draftDate) &&
+      isNormalizedTime(context.draftTime),
+  );
+}
+
+function hasSelectedAppointment(
+  context: ConversationContext | null,
+): context is ConversationContext & { selectedAppointmentId: string } {
+  return Boolean(context?.selectedAppointmentId?.trim());
+}
+
+function hasSelectedAppointmentAndDate(
+  context: ConversationContext | null,
+): context is ConversationContext & {
+  selectedAppointmentId: string;
+  draftDate: string;
+} {
+  return Boolean(
+    context?.selectedAppointmentId?.trim() &&
+      context.draftDate &&
+      isNormalizedDate(context.draftDate),
+  );
+}
+
+function hasRescheduleConfirmationContext(
+  context: ConversationContext | null,
+): context is ConversationContext & {
+  selectedAppointmentId: string;
+  draftDate: string;
+  draftTime: string;
+} {
+  return Boolean(
+    context?.selectedAppointmentId?.trim() &&
+      context.draftDate &&
+      context.draftTime &&
+      isNormalizedDate(context.draftDate) &&
+      isNormalizedTime(context.draftTime),
+  );
+}
 
 export class ConversationEngine {
-  public constructor(private readonly store: ConversationStore) {}
+  public constructor(
+    private readonly store: ConversationStore,
+    private readonly appointmentService: AppointmentService,
+  ) {}
 
   public async handle(input: ConversationInput): Promise<ConversationResult> {
     const externalUserId = input.conversationId.trim();
@@ -33,24 +187,45 @@ export class ConversationEngine {
     });
 
     if (messageType !== 'text' || !text) {
-      return {
-        conversationId: session.id,
-        reply: FALLBACK_REPLY,
-        state: session.state,
-      };
+      return this.result(session, FALLBACK_REPLY, session.state);
     }
 
-    const nextState = this.transition(session.state);
+    const command = normalizeCommand(text);
 
-    if (nextState !== session.state) {
-      await this.store.updateState(session.id, nextState);
+    if (FLOW_STATES.has(session.state) && isExitCommand(command)) {
+      return this.transition(session, 'ACTIVE', null, FLOW_ABORTED_REPLY);
     }
 
-    return {
-      conversationId: session.id,
-      reply: DEFAULT_REPLY,
-      state: nextState,
-    };
+    if (session.state === 'INITIAL') {
+      if (ACTIVE_COMMANDS.has(command)) {
+        return this.handleActive(session, command);
+      }
+
+      return this.transition(session, 'ACTIVE', null, DEFAULT_REPLY);
+    }
+
+    switch (session.state) {
+      case 'ACTIVE':
+        return this.handleActive(session, command);
+      case 'SCHEDULING_DATE':
+        return this.handleSchedulingDate(session, text);
+      case 'SCHEDULING_TIME':
+        return this.handleSchedulingTime(session, text);
+      case 'SCHEDULING_CONFIRMATION':
+        return this.handleSchedulingConfirmation(session, command);
+      case 'CANCELING_SELECT':
+        return this.handleCancelingSelect(session, text);
+      case 'CANCELING_CONFIRMATION':
+        return this.handleCancelingConfirmation(session, command);
+      case 'RESCHEDULING_SELECT':
+        return this.handleReschedulingSelect(session, text);
+      case 'RESCHEDULING_DATE':
+        return this.handleReschedulingDate(session, text);
+      case 'RESCHEDULING_TIME':
+        return this.handleReschedulingTime(session, text);
+      case 'RESCHEDULING_CONFIRMATION':
+        return this.handleReschedulingConfirmation(session, command);
+    }
   }
 
   public async recordOutbound(
@@ -64,12 +239,495 @@ export class ConversationEngine {
     });
   }
 
-  private transition(currentState: ConversationState): ConversationState {
-    switch (currentState) {
-      case 'INITIAL':
-        return 'ACTIVE';
-      case 'ACTIVE':
-        return 'ACTIVE';
+  private async handleActive(
+    session: ConversationSession,
+    command: string,
+  ): Promise<ConversationResult> {
+    switch (command) {
+      case 'agendar':
+        return this.transition(
+          session,
+          'SCHEDULING_DATE',
+          null,
+          'Qual data você deseja? Envie no formato DD/MM/AAAA.',
+        );
+
+
+      case 'meus agendamentos':
+      case 'agendamentos': {
+        const appointments = await this.appointmentService.list(
+          session.customerId,
+        );
+        const reply =
+          appointments.length === 0
+            ? 'Você não possui agendamentos.'
+            : `Seus agendamentos:\n\n${formatAppointmentList(appointments)}`;
+
+        if (session.state === 'INITIAL') {
+          return this.transition(session, 'ACTIVE', null, reply);
+        }
+
+        return this.result(session, reply, 'ACTIVE');
+      }
+
+      case 'cancelar agendamento': {
+        const appointments = await this.appointmentService.list(
+          session.customerId,
+        );
+
+        if (appointments.length === 0) {
+          return this.transition(
+            session,
+            'ACTIVE',
+            null,
+            'Você não possui agendamentos para cancelar.',
+          );
+        }
+
+        return this.transition(
+          session,
+          'CANCELING_SELECT',
+          null,
+          `Qual agendamento deseja cancelar?\n\n${formatAppointmentList(
+            appointments,
+          )}\n\nResponda com o número.`,
+        );
+      }
+
+      case 'remarcar agendamento': {
+        const appointments = await this.appointmentService.list(
+          session.customerId,
+        );
+
+        if (appointments.length === 0) {
+          return this.transition(
+            session,
+            'ACTIVE',
+            null,
+            'Você não possui agendamentos para remarcar.',
+          );
+        }
+
+        return this.transition(
+          session,
+          'RESCHEDULING_SELECT',
+          null,
+          `Qual agendamento deseja remarcar?\n\n${formatAppointmentList(
+            appointments,
+          )}\n\nResponda com o número.`,
+        );
+      }
+
+	  case 'sair':
+		return this.result(
+			session,
+			'Atendimento encerrado. Até logo! 👋',
+			'ACTIVE',
+		);
+
+      default:
+        return this.result(session, DEFAULT_REPLY, 'ACTIVE');
     }
+  }
+
+  private async handleSchedulingDate(
+    session: ConversationSession,
+    text: string,
+  ): Promise<ConversationResult> {
+    const date = parseDateInput(text);
+
+    if (!date) {
+      return this.result(session, INVALID_DATE_REPLY, 'SCHEDULING_DATE');
+    }
+
+    if (!this.appointmentService.isDateTodayOrFuture(date)) {
+      return this.result(session, PAST_DATE_REPLY, 'SCHEDULING_DATE');
+    }
+
+    return this.transition(
+      session,
+      'SCHEDULING_TIME',
+      { draftDate: date },
+      'Qual horário você deseja? Envie no formato HH:mm.',
+    );
+  }
+
+  private async handleSchedulingTime(
+    session: ConversationSession,
+    text: string,
+  ): Promise<ConversationResult> {
+    if (!hasDraftDate(session.context)) {
+      return this.recoverFlow(session);
+    }
+
+    const time = parseTimeInput(text);
+    if (!time) {
+      return this.result(session, INVALID_TIME_REPLY, 'SCHEDULING_TIME');
+    }
+
+    if (!this.appointmentService.isFutureSlot(session.context.draftDate, time)) {
+      return this.result(session, PAST_SLOT_REPLY, 'SCHEDULING_TIME');
+    }
+
+    const context = {
+      draftDate: session.context.draftDate,
+      draftTime: time,
+    };
+
+    return this.transition(
+      session,
+      'SCHEDULING_CONFIRMATION',
+      context,
+      `Confirma o agendamento para ${formatDateForDisplay(
+        context.draftDate,
+      )} às ${context.draftTime}? Responda "sim" ou "não".`,
+    );
+  }
+
+  private async handleSchedulingConfirmation(
+    session: ConversationSession,
+    command: string,
+  ): Promise<ConversationResult> {
+    if (!hasDraftDateAndTime(session.context)) {
+      return this.recoverFlow(session);
+    }
+
+    if (isNegative(command)) {
+      return this.transition(
+        session,
+        'ACTIVE',
+        null,
+        'Agendamento não realizado.',
+      );
+    }
+
+    if (!isAffirmative(command)) {
+      return this.result(
+        session,
+        YES_NO_REPLY,
+        'SCHEDULING_CONFIRMATION',
+      );
+    }
+
+    const result = await this.appointmentService.create(
+      session.customerId,
+      session.context.draftDate,
+      session.context.draftTime,
+    );
+
+    if (result.status === 'SLOT_UNAVAILABLE') {
+      return this.transition(
+        session,
+        'SCHEDULING_TIME',
+        { draftDate: session.context.draftDate },
+        SLOT_UNAVAILABLE_REPLY,
+      );
+    }
+
+    if (result.status === 'INVALID_SLOT') {
+      return this.transition(
+        session,
+        'SCHEDULING_TIME',
+        { draftDate: session.context.draftDate },
+        PAST_SLOT_REPLY,
+      );
+    }
+
+    return this.transition(
+      session,
+      'ACTIVE',
+      null,
+      `Agendamento confirmado para ${formatDateForDisplay(
+        result.appointment.date,
+      )} às ${result.appointment.time}.`,
+    );
+  }
+
+  private async handleCancelingSelect(
+    session: ConversationSession,
+    text: string,
+  ): Promise<ConversationResult> {
+    const appointments = await this.appointmentService.list(session.customerId);
+
+    if (appointments.length === 0) {
+      return this.transition(
+        session,
+        'ACTIVE',
+        null,
+        'Você não possui agendamentos para cancelar.',
+      );
+    }
+
+    const selection = parseSelection(text, appointments.length);
+    if (selection === null) {
+      return this.result(
+        session,
+        'Opção inválida. Responda com o número de um dos agendamentos listados.',
+        'CANCELING_SELECT',
+      );
+    }
+
+    const appointment = appointments[selection];
+    if (!appointment) {
+      return this.result(
+        session,
+        'Opção inválida. Responda com o número de um dos agendamentos listados.',
+        'CANCELING_SELECT',
+      );
+    }
+
+    return this.transition(
+      session,
+      'CANCELING_CONFIRMATION',
+      { selectedAppointmentId: appointment.id },
+      `Confirma o cancelamento de ${formatAppointment(
+        appointment,
+      )}? Responda "sim" ou "não".`,
+    );
+  }
+
+  private async handleCancelingConfirmation(
+    session: ConversationSession,
+    command: string,
+  ): Promise<ConversationResult> {
+    if (!hasSelectedAppointment(session.context)) {
+      return this.recoverFlow(session);
+    }
+
+    if (isNegative(command)) {
+      return this.transition(
+        session,
+        'ACTIVE',
+        null,
+        'Cancelamento não realizado.',
+      );
+    }
+
+    if (!isAffirmative(command)) {
+      return this.result(
+        session,
+        YES_NO_REPLY,
+        'CANCELING_CONFIRMATION',
+      );
+    }
+
+    const result = await this.appointmentService.cancel(
+      session.context.selectedAppointmentId,
+      session.customerId,
+    );
+
+    return this.transition(
+      session,
+      'ACTIVE',
+      null,
+      result.status === 'CANCELLED'
+        ? 'Agendamento cancelado com sucesso.'
+        : 'Esse agendamento não está mais disponível.',
+    );
+  }
+
+  private async handleReschedulingSelect(
+    session: ConversationSession,
+    text: string,
+  ): Promise<ConversationResult> {
+    const appointments = await this.appointmentService.list(session.customerId);
+
+    if (appointments.length === 0) {
+      return this.transition(
+        session,
+        'ACTIVE',
+        null,
+        'Você não possui agendamentos para remarcar.',
+      );
+    }
+
+    const selection = parseSelection(text, appointments.length);
+    if (selection === null) {
+      return this.result(
+        session,
+        'Opção inválida. Responda com o número de um dos agendamentos listados.',
+        'RESCHEDULING_SELECT',
+      );
+    }
+
+    const appointment = appointments[selection];
+    if (!appointment) {
+      return this.result(
+        session,
+        'Opção inválida. Responda com o número de um dos agendamentos listados.',
+        'RESCHEDULING_SELECT',
+      );
+    }
+
+    return this.transition(
+      session,
+      'RESCHEDULING_DATE',
+      { selectedAppointmentId: appointment.id },
+      'Qual será a nova data? Envie no formato DD/MM/AAAA.',
+    );
+  }
+
+  private async handleReschedulingDate(
+    session: ConversationSession,
+    text: string,
+  ): Promise<ConversationResult> {
+    if (!hasSelectedAppointment(session.context)) {
+      return this.recoverFlow(session);
+    }
+
+    const date = parseDateInput(text);
+    if (!date) {
+      return this.result(session, INVALID_DATE_REPLY, 'RESCHEDULING_DATE');
+    }
+
+    if (!this.appointmentService.isDateTodayOrFuture(date)) {
+      return this.result(session, PAST_DATE_REPLY, 'RESCHEDULING_DATE');
+    }
+
+    return this.transition(
+      session,
+      'RESCHEDULING_TIME',
+      {
+        selectedAppointmentId: session.context.selectedAppointmentId,
+        draftDate: date,
+      },
+      'Qual será o novo horário? Envie no formato HH:mm.',
+    );
+  }
+
+  private async handleReschedulingTime(
+    session: ConversationSession,
+    text: string,
+  ): Promise<ConversationResult> {
+    if (!hasSelectedAppointmentAndDate(session.context)) {
+      return this.recoverFlow(session);
+    }
+
+    const time = parseTimeInput(text);
+    if (!time) {
+      return this.result(session, INVALID_TIME_REPLY, 'RESCHEDULING_TIME');
+    }
+
+    if (!this.appointmentService.isFutureSlot(session.context.draftDate, time)) {
+      return this.result(session, PAST_SLOT_REPLY, 'RESCHEDULING_TIME');
+    }
+
+    const context = {
+      selectedAppointmentId: session.context.selectedAppointmentId,
+      draftDate: session.context.draftDate,
+      draftTime: time,
+    };
+
+    return this.transition(
+      session,
+      'RESCHEDULING_CONFIRMATION',
+      context,
+      `Confirma a remarcação para ${formatDateForDisplay(
+        context.draftDate,
+      )} às ${context.draftTime}? Responda "sim" ou "não".`,
+    );
+  }
+
+  private async handleReschedulingConfirmation(
+    session: ConversationSession,
+    command: string,
+  ): Promise<ConversationResult> {
+    if (!hasRescheduleConfirmationContext(session.context)) {
+      return this.recoverFlow(session);
+    }
+
+    if (isNegative(command)) {
+      return this.transition(
+        session,
+        'ACTIVE',
+        null,
+        'Remarcação não realizada.',
+      );
+    }
+
+    if (!isAffirmative(command)) {
+      return this.result(
+        session,
+        YES_NO_REPLY,
+        'RESCHEDULING_CONFIRMATION',
+      );
+    }
+
+    const result = await this.appointmentService.reschedule(
+      session.context.selectedAppointmentId,
+      session.customerId,
+      session.context.draftDate,
+      session.context.draftTime,
+    );
+
+    if (result.status === 'SLOT_UNAVAILABLE') {
+      return this.transition(
+        session,
+        'RESCHEDULING_TIME',
+        {
+          selectedAppointmentId: session.context.selectedAppointmentId,
+          draftDate: session.context.draftDate,
+        },
+        SLOT_UNAVAILABLE_REPLY,
+      );
+    }
+
+    if (result.status === 'INVALID_SLOT') {
+      return this.transition(
+        session,
+        'RESCHEDULING_TIME',
+        {
+          selectedAppointmentId: session.context.selectedAppointmentId,
+          draftDate: session.context.draftDate,
+        },
+        PAST_SLOT_REPLY,
+      );
+    }
+
+    if (result.status === 'NOT_FOUND') {
+      return this.transition(
+        session,
+        'ACTIVE',
+        null,
+        'Esse agendamento não está mais disponível.',
+      );
+    }
+
+    return this.transition(
+      session,
+      'ACTIVE',
+      null,
+      `Agendamento remarcado para ${formatDateForDisplay(
+        result.appointment.date,
+      )} às ${result.appointment.time}.`,
+    );
+  }
+
+  private async recoverFlow(
+    session: ConversationSession,
+  ): Promise<ConversationResult> {
+    return this.transition(session, 'ACTIVE', null, FLOW_RECOVERY_REPLY);
+  }
+
+  private async transition(
+    session: ConversationSession,
+    state: ConversationState,
+    context: ConversationContext | null,
+    reply: string,
+  ): Promise<ConversationResult> {
+    await this.store.updateSession(session.id, { state, context });
+    return this.result(session, reply, state);
+  }
+
+  private result(
+    session: ConversationSession,
+    reply: string,
+    state: ConversationState,
+  ): ConversationResult {
+    return {
+      conversationId: session.id,
+      reply,
+      state,
+    };
   }
 }
