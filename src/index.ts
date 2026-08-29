@@ -1,5 +1,8 @@
+import { AdminService } from './admin/admin.service.js';
+import { createAdminHttpServer } from './admin/admin.http.js';
 import { AppointmentService } from './appointments/appointment.service.js';
 import { ConversationEngine } from './conversation/conversation.engine.js';
+import { PrismaAdminRepository } from './database/prisma-admin.repository.js';
 import { PrismaAppointmentStore } from './database/prisma-appointment.store.js';
 import {
   connectDatabase,
@@ -9,6 +12,22 @@ import {
 import { PrismaConversationStore } from './database/prisma-conversation.store.js';
 import { createWhatsAppProvider } from './whatssap/whatsapp.client.js';
 
+const DEFAULT_ADMIN_HTTP_PORT = 3001;
+
+function getAdminHttpPort(): number {
+  const raw = process.env.ADMIN_HTTP_PORT?.trim();
+  if (!raw) {
+    return DEFAULT_ADMIN_HTTP_PORT;
+  }
+
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('ADMIN_HTTP_PORT must be an integer between 1 and 65535.');
+  }
+
+  return port;
+}
+
 async function main(): Promise<void> {
   const conversationStore = new PrismaConversationStore(prisma);
   const appointmentStore = new PrismaAppointmentStore(prisma);
@@ -17,6 +36,9 @@ async function main(): Promise<void> {
     conversationStore,
     appointmentService,
   );
+  const adminRepository = new PrismaAdminRepository(prisma);
+  const adminService = new AdminService(adminRepository);
+  const adminHttpServer = createAdminHttpServer(adminService);
   const whatsapp = createWhatsAppProvider(conversationEngine);
   let shuttingDown = false;
 
@@ -27,6 +49,21 @@ async function main(): Promise<void> {
 
     shuttingDown = true;
     console.log(`[App] Sinal ${signal} recebido. Encerrando aplicação...`);
+
+    await new Promise<void>((resolve) => {
+      if (!adminHttpServer.listening) {
+        resolve();
+        return;
+      }
+
+      adminHttpServer.close((error) => {
+        if (error) {
+          console.error('[Admin HTTP] Erro ao encerrar servidor:', error);
+          process.exitCode = 1;
+        }
+        resolve();
+      });
+    });
 
     try {
       await whatsapp.destroy();
@@ -54,12 +91,21 @@ async function main(): Promise<void> {
   try {
     await connectDatabase();
     console.log('[Database] PostgreSQL conectado.');
+
+    const adminPort = getAdminHttpPort();
+    adminHttpServer.listen(adminPort, () => {
+      console.log(`[Admin HTTP] Servidor disponível em http://localhost:${adminPort}.`);
+    });
+
     await whatsapp.initialize();
   } catch {
     console.error(
-      '[App] Falha ao inicializar dependências. Verifique PostgreSQL e WhatsApp.',
+      '[App] Falha ao inicializar dependências. Verifique PostgreSQL, configuração HTTP e WhatsApp.',
     );
     process.exitCode = 1;
+    if (adminHttpServer.listening) {
+      adminHttpServer.close();
+    }
     await disconnectDatabase().catch(() => undefined);
   }
 }

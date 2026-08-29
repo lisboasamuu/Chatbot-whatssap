@@ -12,10 +12,14 @@
     "build": "tsc -p tsconfig.json",
     "dev": "npm run build && node dist/index.js",
     "start": "node dist/index.js",
-    "test": "npm run build && node --test \"dist/conversation/*.test.js\"",
+    "test": "npm run build && node --test \"dist/**/*.test.js\"",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "dashboard:dev": "npm --prefix dashboard run dev",
+    "dashboard:build": "npm --prefix dashboard run build",
+    "dashboard:lint": "npm --prefix dashboard run lint",
+    "dashboard:test": "npm --prefix dashboard run test"
   },
   "dependencies": {
     "qrcode-terminal": "^0.12.0",
