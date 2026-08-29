@@ -75,7 +75,11 @@ describe('CustomerDetailPage', () => {
 
     renderPage();
 
-    expect(await screen.findByText('5511999999999@c.us')).toBeInTheDocument();
+    expect(
+		await screen.findByRole('heading', {
+			name: '5511999999999@c.us',
+		}),
+		).toBeInTheDocument();
     expect(screen.getByText('30/08/2026')).toBeInTheDocument();
     expect(screen.getByText('INBOUND')).toBeInTheDocument();
     expect(screen.getByText('OUTBOUND')).toBeInTheDocument();
