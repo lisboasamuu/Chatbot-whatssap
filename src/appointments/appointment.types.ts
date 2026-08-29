@@ -9,6 +9,7 @@ export interface Appointment {
 
 export interface CreateAppointmentInput {
   customerId: string;
+  customerName: string;
   date: string;
   time: string;
 }

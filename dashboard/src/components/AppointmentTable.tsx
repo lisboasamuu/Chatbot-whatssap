@@ -26,7 +26,16 @@ export function AppointmentTable({
           {appointments.map((appointment) => (
             <tr key={appointment.id}>
               <td className="px-4 py-3 font-mono text-xs text-slate-400">{appointment.id}</td>
-              <td className="px-4 py-3">{appointment.customerExternalId}</td>
+              <td className="px-4 py-3">
+                <div className="font-medium">
+                  {appointment.customerName ?? appointment.customerExternalId}
+                </div>
+                {appointment.customerName ? (
+                  <div className="text-xs text-slate-500">
+                    {appointment.customerExternalId}
+                  </div>
+                ) : null}
+              </td>
               <td className="px-4 py-3">{formatDate(appointment.date)}</td>
               <td className="px-4 py-3">{appointment.time}</td>
             </tr>

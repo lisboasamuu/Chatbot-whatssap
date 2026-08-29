@@ -56,6 +56,7 @@ class StubRepository implements AdminRepository {
       return {
         id: customerId,
         externalId: '5511999999999@c.us',
+        name: null,
         createdAt,
         updatedAt: createdAt,
         appointmentCount: 0,

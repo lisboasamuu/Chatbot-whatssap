@@ -3,6 +3,7 @@ export type ConversationState =
   | 'ACTIVE'
   | 'SCHEDULING_DATE'
   | 'SCHEDULING_TIME'
+  | 'SCHEDULING_NAME'
   | 'SCHEDULING_CONFIRMATION'
   | 'CANCELING_SELECT'
   | 'CANCELING_CONFIRMATION'
@@ -28,6 +29,8 @@ export interface ConversationResult {
 export interface ConversationContext {
   draftDate?: string;
   draftTime?: string;
+  draftName?: string;
+  awaitingCourtesyReply?: boolean;
   selectedAppointmentId?: string;
 }
 
@@ -58,6 +61,14 @@ export function parseConversationContext(
 
   if (typeof record.draftTime === 'string') {
     context.draftTime = record.draftTime;
+  }
+
+  if (typeof record.draftName === 'string') {
+    context.draftName = record.draftName;
+  }
+
+  if (typeof record.awaitingCourtesyReply === 'boolean') {
+    context.awaitingCourtesyReply = record.awaitingCourtesyReply;
   }
 
   if (typeof record.selectedAppointmentId === 'string') {

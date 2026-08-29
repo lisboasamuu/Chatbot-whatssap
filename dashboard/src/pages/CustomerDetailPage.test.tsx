@@ -55,6 +55,7 @@ describe('CustomerDetailPage', () => {
           customer: {
             id: 'customer-1',
             externalId: '5511999999999@c.us',
+            name: 'João Silva',
             createdAt: '2026-08-29T12:00:00.000Z',
             updatedAt: '2026-08-29T12:01:00.000Z',
             appointmentCount: 1,
@@ -63,6 +64,7 @@ describe('CustomerDetailPage', () => {
                 id: 'appointment-1',
                 customerId: 'customer-1',
                 customerExternalId: '5511999999999@c.us',
+                customerName: 'João Silva',
                 date: '2026-08-30',
                 time: '09:00',
               },
@@ -76,10 +78,11 @@ describe('CustomerDetailPage', () => {
     renderPage();
 
     expect(
-		await screen.findByRole('heading', {
-			name: '5511999999999@c.us',
-		}),
-		).toBeInTheDocument();
+      await screen.findByRole('heading', {
+        name: 'João Silva',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('5511999999999@c.us').length).toBeGreaterThan(0);
     expect(screen.getByText('30/08/2026')).toBeInTheDocument();
     expect(screen.getByText('INBOUND')).toBeInTheDocument();
     expect(screen.getByText('OUTBOUND')).toBeInTheDocument();
@@ -102,6 +105,7 @@ describe('CustomerDetailPage', () => {
           customer: {
             id: 'customer-1',
             externalId: '5511999999999@c.us',
+            name: 'João Silva',
             createdAt: '2026-08-29T12:00:00.000Z',
             updatedAt: '2026-08-29T12:01:00.000Z',
             appointmentCount: 0,

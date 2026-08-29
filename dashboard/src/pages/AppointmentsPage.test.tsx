@@ -18,6 +18,7 @@ describe('AppointmentsPage', () => {
               id: 'appointment-1',
               customerId: 'customer-1',
               customerExternalId: '5511999999999@c.us',
+              customerName: 'João Silva',
               date: '2026-08-30',
               time: '09:00',
             },
@@ -34,6 +35,8 @@ describe('AppointmentsPage', () => {
     );
 
     expect(await screen.findByText('appointment-1')).toBeInTheDocument();
+    expect(screen.getByText('João Silva')).toBeInTheDocument();
+    expect(screen.getByText('5511999999999@c.us')).toBeInTheDocument();
     expect(screen.getByText('30/08/2026')).toBeInTheDocument();
     expect(screen.getByText('09:00')).toBeInTheDocument();
   });

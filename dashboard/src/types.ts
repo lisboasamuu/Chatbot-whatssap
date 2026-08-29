@@ -2,6 +2,7 @@ export interface Appointment {
   id: string;
   customerId: string;
   customerExternalId: string;
+  customerName: string | null;
   date: string;
   time: string;
 }
@@ -9,6 +10,7 @@ export interface Appointment {
 export interface Customer {
   id: string;
   externalId: string;
+  name: string | null;
   createdAt: string;
   appointmentCount: number;
 }

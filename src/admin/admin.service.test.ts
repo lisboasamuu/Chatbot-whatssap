@@ -78,6 +78,7 @@ function appointment(
     id,
     customerId,
     customerExternalId: `${customerId}@c.us`,
+    customerName: null,
     date,
     time,
   };
@@ -101,6 +102,7 @@ test('summary calculates real counts and next appointments', async () => {
     {
       id: 'customer-1',
       externalId: '5511999999999@c.us',
+    name: null,
       createdAt: now,
       appointmentCount: 2,
     },
@@ -146,6 +148,7 @@ test('customers are returned from repository', async () => {
     {
       id: 'customer-1',
       externalId: '5511999999999@c.us',
+    name: null,
       createdAt: now,
       appointmentCount: 3,
     },
@@ -160,6 +163,7 @@ test('existing customer includes appointments', async () => {
   const detail: AdminCustomerDetail = {
     id: 'customer-1',
     externalId: '5511999999999@c.us',
+    name: null,
     createdAt: now,
     updatedAt: now,
     appointmentCount: 1,
@@ -185,6 +189,7 @@ test('customer without conversation returns null conversation', async () => {
   repository.customerDetails.set('customer-1', {
     id: 'customer-1',
     externalId: '5511999999999@c.us',
+    name: null,
     createdAt: now,
     updatedAt: now,
     appointmentCount: 0,
@@ -201,6 +206,7 @@ test('conversation messages preserve chronological repository order', async () =
   repository.customerDetails.set('customer-1', {
     id: 'customer-1',
     externalId: '5511999999999@c.us',
+    name: null,
     createdAt: now,
     updatedAt: now,
     appointmentCount: 0,

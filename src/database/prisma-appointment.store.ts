@@ -21,12 +21,19 @@ export class PrismaAppointmentStore implements AppointmentStore {
 
   public async create(input: CreateAppointmentInput): Promise<Appointment> {
     try {
-      return await this.prisma.appointment.create({
-        data: {
-          customerId: input.customerId,
-          date: input.date,
-          time: input.time,
-        },
+      return await this.prisma.$transaction(async (tx) => {
+        await tx.customer.update({
+          where: { id: input.customerId },
+          data: { name: input.customerName },
+        });
+
+        return tx.appointment.create({
+          data: {
+            customerId: input.customerId,
+            date: input.date,
+            time: input.time,
+          },
+        });
       });
     } catch (error) {
       if (isUniqueConstraintError(error)) {

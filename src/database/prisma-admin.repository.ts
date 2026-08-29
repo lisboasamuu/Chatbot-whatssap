@@ -38,7 +38,7 @@ export class PrismaAdminRepository implements AdminRepository {
       },
       include: {
         customer: {
-          select: { externalId: true },
+          select: { externalId: true, name: true },
         },
       },
       orderBy: [{ date: 'asc' }, { time: 'asc' }],
@@ -49,6 +49,7 @@ export class PrismaAdminRepository implements AdminRepository {
       id: appointment.id,
       customerId: appointment.customerId,
       customerExternalId: appointment.customer.externalId,
+      customerName: appointment.customer.name,
       date: appointment.date,
       time: appointment.time,
     }));
@@ -67,6 +68,7 @@ export class PrismaAdminRepository implements AdminRepository {
     return customers.map((customer) => ({
       id: customer.id,
       externalId: customer.externalId,
+      name: customer.name,
       createdAt: customer.createdAt,
       appointmentCount: customer._count.appointments,
     }));
@@ -81,7 +83,7 @@ export class PrismaAdminRepository implements AdminRepository {
         appointments: {
           include: {
             customer: {
-              select: { externalId: true },
+              select: { externalId: true, name: true },
             },
           },
           orderBy: [{ date: 'asc' }, { time: 'asc' }],
@@ -99,6 +101,7 @@ export class PrismaAdminRepository implements AdminRepository {
     return {
       id: customer.id,
       externalId: customer.externalId,
+      name: customer.name,
       createdAt: customer.createdAt,
       updatedAt: customer.updatedAt,
       appointmentCount: customer._count.appointments,
@@ -106,6 +109,7 @@ export class PrismaAdminRepository implements AdminRepository {
         id: appointment.id,
         customerId: appointment.customerId,
         customerExternalId: appointment.customer.externalId,
+        customerName: appointment.customer.name,
         date: appointment.date,
         time: appointment.time,
       })),

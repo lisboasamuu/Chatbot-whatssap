@@ -34,6 +34,7 @@ describe('CustomersPage', () => {
             {
               id: 'customer-1',
               externalId: '5511999999999@c.us',
+            name: 'João Silva',
               createdAt: '2026-08-29T12:00:00.000Z',
               appointmentCount: 2,
             },
@@ -49,7 +50,8 @@ describe('CustomersPage', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('5511999999999@c.us')).toBeInTheDocument();
+    expect(await screen.findByText('João Silva')).toBeInTheDocument();
+    expect(screen.getByText('5511999999999@c.us')).toBeInTheDocument();
     expect(screen.getByText('2 agendamento(s)')).toBeInTheDocument();
   });
 });

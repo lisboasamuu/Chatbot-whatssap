@@ -42,6 +42,7 @@ export class AppointmentService {
 
   public async create(
     customerId: string,
+    customerName: string,
     date: string,
     time: string,
   ): Promise<CreateAppointmentResult> {
@@ -50,7 +51,12 @@ export class AppointmentService {
     }
 
     try {
-      const appointment = await this.store.create({ customerId, date, time });
+      const appointment = await this.store.create({
+        customerId,
+        customerName,
+        date,
+        time,
+      });
       return { status: 'CREATED', appointment };
     } catch (error) {
       if (error instanceof AppointmentSlotUnavailableError) {

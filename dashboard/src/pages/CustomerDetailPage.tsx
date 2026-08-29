@@ -44,8 +44,11 @@ export function CustomerDetailPage(): ReactNode {
         <Link to="/customers" className="text-sm text-cyan-400 hover:underline">
           ← Voltar para clientes
         </Link>
-        <h2 className="text-3xl font-semibold tracking-tight">{customer.externalId}</h2>
+        <h2 className="text-3xl font-semibold tracking-tight">
+          {customer.name ?? customer.externalId}
+        </h2>
         <div className="grid gap-1 text-sm text-slate-400">
+          {customer.name ? <p>WhatsApp: {customer.externalId}</p> : null}
           <p>ID: <span className="font-mono">{customer.id}</span></p>
           <p>Criado em: {new Date(customer.createdAt).toLocaleString('pt-BR')}</p>
           <p>Atualizado em: {new Date(customer.updatedAt).toLocaleString('pt-BR')}</p>

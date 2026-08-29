@@ -122,10 +122,12 @@ class InMemoryConversationStore implements ConversationStore {
 
 class InMemoryAppointmentStore implements AppointmentStore {
   private readonly appointments = new Map<string, Appointment>();
+  private readonly customerNames = new Map<string, string>();
   private sequence = 0;
 
   public async create(input: CreateAppointmentInput): Promise<Appointment> {
     this.assertSlotAvailable(input.date, input.time);
+    this.customerNames.set(input.customerId, input.customerName);
 
     const now = NOW();
     const appointment: Appointment = {
@@ -217,6 +219,10 @@ class InMemoryAppointmentStore implements AppointmentStore {
     return this.appointments.size;
   }
 
+  public customerNameFor(customerId: string): string | undefined {
+    return this.customerNames.get(customerId);
+  }
+
   private assertSlotAvailable(
     date: string,
     time: string,
@@ -279,10 +285,12 @@ async function advanceToSchedulingConfirmation(
   user = 'user-a',
   date = '02/01/2030',
   time = '14:30',
+  name = 'João Silva',
 ): Promise<void> {
   await engine.handle({ conversationId: user, text: 'agendar' });
   await engine.handle({ conversationId: user, text: date });
   await engine.handle({ conversationId: user, text: time });
+  await engine.handle({ conversationId: user, text: name });
 }
 
 async function schedule(
@@ -470,7 +478,47 @@ test('CREATE: valid time advances and persists draftTime', async () => {
     text: '14:30',
   });
 
+  assert.equal(result.state, 'SCHEDULING_NAME');
+  assert.equal(result.reply, 'Qual é o seu nome?');
+  assert.deepEqual(conversationStore.contextFor('user-a'), {
+    draftDate: '2030-01-02',
+    draftTime: '14:30',
+  });
+});
+
+test('CREATE: valid name advances to confirmation and persists draftName', async () => {
+  const { conversationStore, engine } = createHarness();
+  await engine.handle({ conversationId: 'user-a', text: 'agendar' });
+  await engine.handle({ conversationId: 'user-a', text: '02/01/2030' });
+  await engine.handle({ conversationId: 'user-a', text: '14:30' });
+
+  const result = await engine.handle({
+    conversationId: 'user-a',
+    text: '  João   da Silva  ',
+  });
+
   assert.equal(result.state, 'SCHEDULING_CONFIRMATION');
+  assert.match(result.reply, /João da Silva/);
+  assert.deepEqual(conversationStore.contextFor('user-a'), {
+    draftDate: '2030-01-02',
+    draftTime: '14:30',
+    draftName: 'João da Silva',
+  });
+});
+
+test('CREATE: invalid name remains in name step', async () => {
+  const { conversationStore, engine } = createHarness();
+  await engine.handle({ conversationId: 'user-a', text: 'agendar' });
+  await engine.handle({ conversationId: 'user-a', text: '02/01/2030' });
+  await engine.handle({ conversationId: 'user-a', text: '14:30' });
+
+  const result = await engine.handle({
+    conversationId: 'user-a',
+    text: '12345',
+  });
+
+  assert.equal(result.state, 'SCHEDULING_NAME');
+  assert.match(result.reply, /Nome inválido/);
   assert.deepEqual(conversationStore.contextFor('user-a'), {
     draftDate: '2030-01-02',
     draftTime: '14:30',
@@ -525,10 +573,16 @@ test('CREATE: affirmative confirmation creates appointment and clears context', 
   assert.equal(result.state, 'ACTIVE');
   assert.equal(
     result.reply,
-    'Agendamento confirmado para 02/01/2030 às 14:30.',
+    'Agendamento confirmado para 02/01/2030 às 14:30. Obrigado pela preferência!',
   );
   assert.equal(appointmentStore.count(), 1);
-  assert.equal(conversationStore.contextFor('user-a'), null);
+  assert.equal(
+    appointmentStore.customerNameFor(conversationStore.customerFor('user-a')),
+    'João Silva',
+  );
+  assert.deepEqual(conversationStore.contextFor('user-a'), {
+    awaitingCourtesyReply: true,
+  });
 });
 
 test('CREATE: negative confirmation cancels flow without creating appointment', async () => {
@@ -729,8 +783,14 @@ test('DELETE: positive confirmation deletes appointment', async () => {
   });
 
   assert.equal(result.state, 'ACTIVE');
-  assert.equal(result.reply, 'Agendamento cancelado com sucesso.');
+  assert.equal(
+    result.reply,
+    'Agendamento cancelado com sucesso. Obrigado pela preferência!',
+  );
   assert.equal(appointmentStore.count(), 0);
+  assert.deepEqual(conversationStore.contextFor('user-a'), {
+    awaitingCourtesyReply: true,
+  });
 });
 
 test('DELETE: negative confirmation preserves appointment', async () => {
@@ -919,7 +979,7 @@ test('UPDATE: successful reschedule preserves appointment identity and createdAt
   assert.equal(result.state, 'ACTIVE');
   assert.equal(
     result.reply,
-    'Agendamento remarcado para 05/01/2030 às 15:00.',
+    'Agendamento remarcado para 05/01/2030 às 15:00. Obrigado pela preferência!',
   );
   assert.equal(updated?.id, original.id);
   assert.equal(updated?.customerId, original.customerId);
@@ -1105,8 +1165,8 @@ test('STATE/CONTEXT: persisted draft survives engine recreation', async () => {
     text: '14:00',
   });
 
-  assert.equal(result.state, 'SCHEDULING_CONFIRMATION');
-  assert.match(result.reply, /02\/01\/2030 às 14:00/);
+  assert.equal(result.state, 'SCHEDULING_NAME');
+  assert.equal(result.reply, 'Qual é o seu nome?');
 });
 
 test('STATE/CONTEXT: inconsistent context recovers safely to ACTIVE', async () => {
@@ -1121,6 +1181,32 @@ test('STATE/CONTEXT: inconsistent context recovers safely to ACTIVE', async () =
   assert.equal(result.state, 'ACTIVE');
   assert.match(result.reply, /Não foi possível continuar/);
   assert.equal(conversationStore.contextFor('user-a'), null);
+});
+
+test('COURTESY: replies politely after a completed operation', async () => {
+  const { engine } = createHarness();
+  await schedule(engine);
+
+  const result = await engine.handle({
+    conversationId: 'user-a',
+    text: 'Não há de quê',
+  });
+
+  assert.equal(result.state, 'ACTIVE');
+  assert.equal(result.reply, 'Um prazer ter você aqui. 😊');
+});
+
+test('COURTESY: does not hijack unrelated active conversation', async () => {
+  const { engine } = createHarness();
+  await activate(engine);
+
+  const result = await engine.handle({
+    conversationId: 'user-a',
+    text: 'de nada',
+  });
+
+  assert.equal(result.state, 'ACTIVE');
+  assert.equal(result.reply, DEFAULT_REPLY);
 });
 
 test('ACTIVE: unknown message displays the clinic menu', async () => {

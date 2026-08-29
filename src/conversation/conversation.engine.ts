@@ -44,6 +44,10 @@ const PAST_SLOT_REPLY =
 const YES_NO_REPLY = 'Responda "sim" ou "não".';
 const SLOT_UNAVAILABLE_REPLY =
   'Esse horário já está ocupado. Envie outro horário no formato HH:mm.';
+const INVALID_NAME_REPLY =
+  'Nome inválido. Informe seu nome usando apenas letras, espaços, hífen ou apóstrofo.';
+const COURTESY_REPLY = 'Um prazer ter você aqui. 😊';
+const THANK_YOU_SUFFIX = ' Obrigado pela preferência!';
 
 const ACTIVE_COMMANDS = new Set([
   'agendar',
@@ -59,6 +63,7 @@ const ACTIVE_COMMANDS = new Set([
 const FLOW_STATES = new Set<ConversationState>([
   'SCHEDULING_DATE',
   'SCHEDULING_TIME',
+  'SCHEDULING_NAME',
   'SCHEDULING_CONFIRMATION',
   'CANCELING_SELECT',
   'CANCELING_CONFIRMATION',
@@ -82,6 +87,34 @@ function isNegative(command: string): boolean {
 
 function isExitCommand(command: string): boolean {
   return command === 'sair' || command === 'voltar';
+}
+
+function isCourtesyReply(command: string): boolean {
+  const normalized = command
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  return new Set([
+    'de nada',
+    'por nada',
+    'imagina',
+    'nao ha de que',
+    'disponha',
+  ]).has(normalized);
+}
+
+function normalizeName(input: string): string | null {
+  const name = input.trim().replace(/\s+/g, ' ');
+
+  if (
+    name.length < 2 ||
+    name.length > 100 ||
+    !/^[\p{L}\p{M}][\p{L}\p{M}' -]{1,99}$/u.test(name)
+  ) {
+    return null;
+  }
+
+  return name;
 }
 
 function parseSelection(input: string, length: number): number | null {
@@ -121,6 +154,20 @@ function hasDraftDateAndTime(
       context.draftTime &&
       isNormalizedDate(context.draftDate) &&
       isNormalizedTime(context.draftTime),
+  );
+}
+
+function hasSchedulingConfirmationContext(
+  context: ConversationContext | null,
+): context is ConversationContext & {
+  draftDate: string;
+  draftTime: string;
+  draftName: string;
+} {
+  return Boolean(
+    hasDraftDateAndTime(context) &&
+      context.draftName &&
+      normalizeName(context.draftName),
   );
 }
 
@@ -192,6 +239,18 @@ export class ConversationEngine {
 
     const command = normalizeCommand(text);
 
+    if (session.state === 'ACTIVE' && session.context?.awaitingCourtesyReply) {
+      if (isCourtesyReply(command)) {
+        return this.transition(session, 'ACTIVE', null, COURTESY_REPLY);
+      }
+
+      await this.store.updateSession(session.id, {
+        state: 'ACTIVE',
+        context: null,
+      });
+      session.context = null;
+    }
+
     if (FLOW_STATES.has(session.state) && isExitCommand(command)) {
       return this.transition(session, 'ACTIVE', null, FLOW_ABORTED_REPLY);
     }
@@ -211,6 +270,8 @@ export class ConversationEngine {
         return this.handleSchedulingDate(session, text);
       case 'SCHEDULING_TIME':
         return this.handleSchedulingTime(session, text);
+      case 'SCHEDULING_NAME':
+        return this.handleSchedulingName(session, text);
       case 'SCHEDULING_CONFIRMATION':
         return this.handleSchedulingConfirmation(session, command);
       case 'CANCELING_SELECT':
@@ -376,9 +437,36 @@ export class ConversationEngine {
 
     return this.transition(
       session,
+      'SCHEDULING_NAME',
+      context,
+      'Qual é o seu nome?',
+    );
+  }
+
+  private async handleSchedulingName(
+    session: ConversationSession,
+    text: string,
+  ): Promise<ConversationResult> {
+    if (!hasDraftDateAndTime(session.context)) {
+      return this.recoverFlow(session);
+    }
+
+    const name = normalizeName(text);
+    if (!name) {
+      return this.result(session, INVALID_NAME_REPLY, 'SCHEDULING_NAME');
+    }
+
+    const context = {
+      draftDate: session.context.draftDate,
+      draftTime: session.context.draftTime,
+      draftName: name,
+    };
+
+    return this.transition(
+      session,
       'SCHEDULING_CONFIRMATION',
       context,
-      `Confirma o agendamento para ${formatDateForDisplay(
+      `Confirma o agendamento de ${context.draftName} para ${formatDateForDisplay(
         context.draftDate,
       )} às ${context.draftTime}? Responda "sim" ou "não".`,
     );
@@ -388,7 +476,7 @@ export class ConversationEngine {
     session: ConversationSession,
     command: string,
   ): Promise<ConversationResult> {
-    if (!hasDraftDateAndTime(session.context)) {
+    if (!hasSchedulingConfirmationContext(session.context)) {
       return this.recoverFlow(session);
     }
 
@@ -411,6 +499,7 @@ export class ConversationEngine {
 
     const result = await this.appointmentService.create(
       session.customerId,
+      session.context.draftName,
       session.context.draftDate,
       session.context.draftTime,
     );
@@ -436,10 +525,10 @@ export class ConversationEngine {
     return this.transition(
       session,
       'ACTIVE',
-      null,
+      { awaitingCourtesyReply: true },
       `Agendamento confirmado para ${formatDateForDisplay(
         result.appointment.date,
-      )} às ${result.appointment.time}.`,
+      )} às ${result.appointment.time}.${THANK_YOU_SUFFIX}`,
     );
   }
 
@@ -516,13 +605,20 @@ export class ConversationEngine {
       session.customerId,
     );
 
+    if (result.status === 'CANCELLED') {
+      return this.transition(
+        session,
+        'ACTIVE',
+        { awaitingCourtesyReply: true },
+        `Agendamento cancelado com sucesso.${THANK_YOU_SUFFIX}`,
+      );
+    }
+
     return this.transition(
       session,
       'ACTIVE',
       null,
-      result.status === 'CANCELLED'
-        ? 'Agendamento cancelado com sucesso.'
-        : 'Esse agendamento não está mais disponível.',
+      'Esse agendamento não está mais disponível.',
     );
   }
 
@@ -696,10 +792,10 @@ export class ConversationEngine {
     return this.transition(
       session,
       'ACTIVE',
-      null,
+      { awaitingCourtesyReply: true },
       `Agendamento remarcado para ${formatDateForDisplay(
         result.appointment.date,
-      )} às ${result.appointment.time}.`,
+      )} às ${result.appointment.time}.${THANK_YOU_SUFFIX}`,
     );
   }
 

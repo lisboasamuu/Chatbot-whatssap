@@ -26,6 +26,12 @@ function toPrismaContext(
     ...(context.draftTime !== undefined
       ? { draftTime: context.draftTime }
       : {}),
+    ...(context.draftName !== undefined
+      ? { draftName: context.draftName }
+      : {}),
+    ...(context.awaitingCourtesyReply !== undefined
+      ? { awaitingCourtesyReply: context.awaitingCourtesyReply }
+      : {}),
     ...(context.selectedAppointmentId !== undefined
       ? { selectedAppointmentId: context.selectedAppointmentId }
       : {}),

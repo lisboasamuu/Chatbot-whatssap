@@ -12,6 +12,7 @@ enum ConversationState {
   ACTIVE
   SCHEDULING_DATE
   SCHEDULING_TIME
+  SCHEDULING_NAME
   SCHEDULING_CONFIRMATION
   CANCELING_SELECT
   CANCELING_CONFIRMATION
@@ -29,6 +30,7 @@ enum MessageDirection {
 model Customer {
   id            String         @id @default(cuid())
   externalId    String         @unique
+  name          String?
   conversations Conversation[]
   appointments  Appointment[]
   createdAt     DateTime       @default(now())

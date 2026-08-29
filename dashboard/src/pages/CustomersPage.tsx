@@ -39,7 +39,10 @@ export function CustomersPage(): ReactNode {
               className="grid gap-2 rounded-xl border border-slate-800 bg-slate-900 p-4 transition hover:border-cyan-700 sm:grid-cols-[1fr_auto_auto] sm:items-center"
             >
               <div>
-                <p className="font-medium">{customer.externalId}</p>
+                <p className="font-medium">{customer.name ?? customer.externalId}</p>
+                {customer.name ? (
+                  <p className="text-sm text-slate-400">{customer.externalId}</p>
+                ) : null}
                 <p className="font-mono text-xs text-slate-500">{customer.id}</p>
               </div>
               <p className="text-sm text-slate-400">
