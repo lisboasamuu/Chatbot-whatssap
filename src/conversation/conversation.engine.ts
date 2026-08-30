@@ -48,6 +48,8 @@ const INVALID_NAME_REPLY =
   'Nome inválido. Informe seu nome usando apenas letras, espaços, hífen ou apóstrofo.';
 const COURTESY_REPLY = 'Um prazer ter você aqui. 😊';
 const THANK_YOU_SUFFIX = ' Obrigado pela preferência!';
+export const INACTIVITY_REPLY =
+  'Atendimento encerrado automaticamente por inatividade. Quando precisar, é só enviar uma nova mensagem. Até logo! 👋';
 
 const ACTIVE_COMMANDS = new Set([
   'agendar',
@@ -289,6 +291,27 @@ export class ConversationEngine {
     }
   }
 
+
+  public async expireInactiveConversation(
+    externalUserId: string,
+  ): Promise<ConversationResult> {
+    const id = externalUserId.trim();
+    if (!id) {
+      return {
+        conversationId: '',
+        reply: INACTIVITY_REPLY,
+        state: 'INITIAL',
+      };
+    }
+
+    const session = await this.store.getOrCreateSession(id);
+    await this.store.updateSession(session.id, {
+      state: 'INITIAL',
+      context: null,
+    });
+    return this.result(session, INACTIVITY_REPLY, 'INITIAL', true);
+  }
+
   public async recordOutbound(
     conversationId: string,
     body: string,
@@ -379,12 +402,13 @@ export class ConversationEngine {
         );
       }
 
-	  case 'sair':
-		return this.result(
-			session,
-			'Atendimento encerrado. Até logo! 👋',
-			'ACTIVE',
-		);
+      case 'sair':
+        return this.result(
+          session,
+          'Atendimento encerrado. Até logo! 👋',
+          'ACTIVE',
+          true,
+        );
 
       default:
         return this.result(session, DEFAULT_REPLY, 'ACTIVE');
@@ -819,11 +843,13 @@ export class ConversationEngine {
     session: ConversationSession,
     reply: string,
     state: ConversationState,
+    ended = false,
   ): ConversationResult {
     return {
       conversationId: session.id,
       reply,
       state,
+      ...(ended ? { ended: true } : {}),
     };
   }
 }

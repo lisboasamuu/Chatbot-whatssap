@@ -24,6 +24,7 @@ export interface ConversationResult {
   conversationId: string;
   reply: string;
   state: ConversationState;
+  ended?: boolean;
 }
 
 export interface ConversationContext {

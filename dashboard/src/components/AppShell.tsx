@@ -13,8 +13,8 @@ export function AppShell({ children }: { children: ReactNode }): ReactNode {
       <header className="border-b border-slate-800 bg-slate-950/95">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-400">S-TECH</p>
-            <h1 className="text-xl font-semibold">Operações</h1>
+            <p className="text-xs font-semibold uppercase tracking-[0.3em] text-cyan-400">Samuel Lisboa</p>
+            <h1 className="text-xl font-semibold">ChatBot Whatssap</h1>
           </div>
           <nav className="flex flex-wrap gap-2" aria-label="Navegação principal">
             {navigation.map((item) => (

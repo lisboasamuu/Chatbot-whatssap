@@ -14,6 +14,7 @@ import {
   ConversationEngine,
   DEFAULT_REPLY,
   FALLBACK_REPLY,
+  INACTIVITY_REPLY,
 } from './conversation.engine.js';
 import type {
   ConversationStore,
@@ -1233,4 +1234,49 @@ test('ERRORS: unexpected appointment persistence error propagates to integration
     engine.handle({ conversationId: 'user-a', text: 'sim' }),
     /appointment database failure/,
   );
+});
+
+
+test('INACTIVITY: resets state and clears context after timeout', async () => {
+  const { conversationStore, engine } = createHarness();
+
+  await engine.handle({ conversationId: 'user-a', text: 'agendar' });
+  await engine.handle({ conversationId: 'user-a', text: '02/01/2030' });
+
+  const result = await engine.expireInactiveConversation('user-a');
+
+  assert.equal(result.state, 'INITIAL');
+  assert.equal(result.reply, INACTIVITY_REPLY);
+  assert.equal(conversationStore.stateFor('user-a'), 'INITIAL');
+  assert.equal(conversationStore.contextFor('user-a'), null);
+});
+
+test('INACTIVITY: next inbound starts from a clean conversation', async () => {
+  const { engine } = createHarness();
+
+  await engine.handle({ conversationId: 'user-a', text: 'agendar' });
+  await engine.expireInactiveConversation('user-a');
+
+  const result = await engine.handle({
+    conversationId: 'user-a',
+    text: 'Olá novamente',
+  });
+
+  assert.equal(result.state, 'ACTIVE');
+  assert.equal(result.reply, DEFAULT_REPLY);
+});
+
+
+test('ACTIVE: explicit sair marks the chat as ended', async () => {
+  const { engine } = createHarness();
+  await activate(engine);
+
+  const result = await engine.handle({
+    conversationId: 'user-a',
+    text: 'sair',
+  });
+
+  assert.equal(result.state, 'ACTIVE');
+  assert.equal(result.ended, true);
+  assert.equal(result.reply, 'Atendimento encerrado. Até logo! 👋');
 });
