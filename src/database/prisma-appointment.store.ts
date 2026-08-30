@@ -17,18 +17,27 @@ function isUniqueConstraintError(error: unknown): boolean {
 }
 
 export class PrismaAppointmentStore implements AppointmentStore {
-  public constructor(private readonly prisma: PrismaClient) {}
+  public constructor(
+    private readonly prisma: PrismaClient,
+    private readonly companyId: string,
+  ) {}
 
   public async create(input: CreateAppointmentInput): Promise<Appointment> {
     try {
       return await this.prisma.$transaction(async (tx) => {
         await tx.customer.update({
-          where: { id: input.customerId },
+          where: {
+            companyId_id: {
+              companyId: this.companyId,
+              id: input.customerId,
+            },
+          },
           data: { name: input.customerName },
         });
 
         return tx.appointment.create({
           data: {
+            companyId: this.companyId,
             customerId: input.customerId,
             date: input.date,
             time: input.time,
@@ -39,14 +48,16 @@ export class PrismaAppointmentStore implements AppointmentStore {
       if (isUniqueConstraintError(error)) {
         throw new AppointmentSlotUnavailableError();
       }
-
       throw error;
     }
   }
 
   public async listByCustomer(customerId: string): Promise<Appointment[]> {
     return this.prisma.appointment.findMany({
-      where: { customerId },
+      where: {
+        companyId: this.companyId,
+        customerId,
+      },
       orderBy: [{ date: 'asc' }, { time: 'asc' }],
     });
   }
@@ -58,10 +69,10 @@ export class PrismaAppointmentStore implements AppointmentStore {
     const result = await this.prisma.appointment.deleteMany({
       where: {
         id: appointmentId,
+        companyId: this.companyId,
         customerId,
       },
     });
-
     return result.count > 0;
   }
 
@@ -75,21 +86,20 @@ export class PrismaAppointmentStore implements AppointmentStore {
       const result = await this.prisma.appointment.updateMany({
         where: {
           id: appointmentId,
+          companyId: this.companyId,
           customerId,
         },
-        data: {
-          date,
-          time,
-        },
+        data: { date, time },
       });
 
       if (result.count === 0) {
         return null;
       }
 
-      return await this.prisma.appointment.findFirst({
+      return this.prisma.appointment.findFirst({
         where: {
           id: appointmentId,
+          companyId: this.companyId,
           customerId,
         },
       });
@@ -97,7 +107,6 @@ export class PrismaAppointmentStore implements AppointmentStore {
       if (isUniqueConstraintError(error)) {
         throw new AppointmentSlotUnavailableError();
       }
-
       throw error;
     }
   }

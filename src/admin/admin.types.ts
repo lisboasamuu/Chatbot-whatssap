@@ -1,3 +1,8 @@
+export interface AdminCompany {
+  id: string;
+  name: string;
+}
+
 export interface AdminAppointment {
   id: string;
   customerId: string;

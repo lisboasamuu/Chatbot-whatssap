@@ -22,32 +22,33 @@ class StubRepository implements AdminRepository {
     }
   }
 
-  public async countCustomers(): Promise<number> {
+  public async countCustomers(_companyId: string): Promise<number> {
     this.maybeFail();
     return 0;
   }
 
-  public async countAppointmentsOnDate(): Promise<number> {
+  public async countAppointmentsOnDate(_companyId: string, _date: string): Promise<number> {
     this.maybeFail();
     return 0;
   }
 
-  public async countUpcomingAppointments(): Promise<number> {
+  public async countUpcomingAppointments(_companyId: string, _date: string, _time: string): Promise<number> {
     this.maybeFail();
     return 0;
   }
 
-  public async listUpcomingAppointments(): Promise<AdminAppointment[]> {
+  public async listUpcomingAppointments(_companyId: string, _date: string, _time: string, _limit: number): Promise<AdminAppointment[]> {
     this.maybeFail();
     return [];
   }
 
-  public async listCustomers(): Promise<AdminCustomer[]> {
+  public async listCustomers(_companyId: string): Promise<AdminCustomer[]> {
     this.maybeFail();
     return [];
   }
 
   public async findCustomerById(
+    _companyId: string,
     customerId: string,
   ): Promise<AdminCustomerDetail | null> {
     this.maybeFail();
@@ -66,7 +67,7 @@ class StubRepository implements AdminRepository {
     return null;
   }
 
-  public async findConversationByCustomerId(): Promise<AdminConversation | null> {
+  public async findConversationByCustomerId(_companyId: string, _customerId: string): Promise<AdminConversation | null> {
     this.maybeFail();
     return null;
   }
@@ -77,7 +78,11 @@ async function withServer(
   callback: (baseUrl: string) => Promise<void>,
 ): Promise<void> {
   const server = createAdminHttpServer(
-    new AdminService(repository, () => new Date(2026, 7, 29, 10, 30)),
+    new AdminService(
+      repository,
+      { companyId: 'company-a', companyName: 'Company A' },
+      () => new Date(2026, 7, 29, 10, 30),
+    ),
   );
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -98,6 +103,17 @@ test('health endpoint responds with ok JSON', async () => {
 
     assert.equal(response.status, 200);
     assert.deepEqual(await response.json(), { status: 'ok' });
+  });
+});
+
+test('current company endpoint exposes only trusted server tenant', async () => {
+  await withServer(new StubRepository(), async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/api/company/current`);
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), {
+      company: { id: 'company-a', name: 'Company A' },
+    });
   });
 });
 

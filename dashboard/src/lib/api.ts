@@ -1,5 +1,6 @@
 import type {
   Appointment,
+  Company,
   Conversation,
   Customer,
   CustomerDetail,
@@ -34,6 +35,8 @@ async function request<T>(path: string): Promise<T> {
 }
 
 export const api = {
+  getCurrentCompany: (): Promise<Company> =>
+    request<{ company: Company }>('/api/company/current').then(({ company }) => company),
   getSummary: (): Promise<DashboardSummary> =>
     request<DashboardSummary>('/api/dashboard/summary'),
   getUpcomingAppointments: (): Promise<Appointment[]> =>

@@ -1,11 +1,13 @@
 import type { AdminRepository } from './admin.repository.js';
 import type {
   AdminAppointment,
+  AdminCompany,
   AdminConversation,
   AdminCustomer,
   AdminCustomerDetail,
   DashboardSummary,
 } from './admin.types.js';
+import type { TenantContext } from '../tenant/tenant.context.js';
 
 export class AdminResourceNotFoundError extends Error {
   public constructor(resource: string) {
@@ -30,13 +32,19 @@ function formatLocalTime(date: Date): string {
 export class AdminService {
   public constructor(
     private readonly repository: AdminRepository,
+    private readonly tenant: TenantContext,
     private readonly clock: () => Date = () => new Date(),
   ) {}
+
+  public getCompany(): AdminCompany {
+    return { id: this.tenant.companyId, name: this.tenant.companyName };
+  }
 
   public async getSummary(limit = 5): Promise<DashboardSummary> {
     const now = this.clock();
     const date = formatLocalDate(now);
     const time = formatLocalTime(now);
+    const companyId = this.tenant.companyId;
 
     const [
       totalCustomers,
@@ -44,10 +52,10 @@ export class AdminService {
       upcomingAppointments,
       nextAppointments,
     ] = await Promise.all([
-      this.repository.countCustomers(),
-      this.repository.countAppointmentsOnDate(date),
-      this.repository.countUpcomingAppointments(date, time),
-      this.repository.listUpcomingAppointments(date, time, limit),
+      this.repository.countCustomers(companyId),
+      this.repository.countAppointmentsOnDate(companyId, date),
+      this.repository.countUpcomingAppointments(companyId, date, time),
+      this.repository.listUpcomingAppointments(companyId, date, time, limit),
     ]);
 
     return {
@@ -61,6 +69,7 @@ export class AdminService {
   public async listUpcomingAppointments(limit = 100): Promise<AdminAppointment[]> {
     const now = this.clock();
     return this.repository.listUpcomingAppointments(
+      this.tenant.companyId,
       formatLocalDate(now),
       formatLocalTime(now),
       limit,
@@ -68,11 +77,14 @@ export class AdminService {
   }
 
   public async listCustomers(): Promise<AdminCustomer[]> {
-    return this.repository.listCustomers();
+    return this.repository.listCustomers(this.tenant.companyId);
   }
 
   public async getCustomer(customerId: string): Promise<AdminCustomerDetail> {
-    const customer = await this.repository.findCustomerById(customerId);
+    const customer = await this.repository.findCustomerById(
+      this.tenant.companyId,
+      customerId,
+    );
     if (!customer) {
       throw new AdminResourceNotFoundError('Customer');
     }
@@ -80,10 +92,16 @@ export class AdminService {
   }
 
   public async getConversation(customerId: string): Promise<AdminConversation | null> {
-    const customer = await this.repository.findCustomerById(customerId);
+    const customer = await this.repository.findCustomerById(
+      this.tenant.companyId,
+      customerId,
+    );
     if (!customer) {
       throw new AdminResourceNotFoundError('Customer');
     }
-    return this.repository.findConversationByCustomerId(customerId);
+    return this.repository.findConversationByCustomerId(
+      this.tenant.companyId,
+      customerId,
+    );
   }
 }

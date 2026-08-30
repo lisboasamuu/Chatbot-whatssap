@@ -1,3 +1,27 @@
+# Fase 5 — Multiempresa
+
+A aplicação usa **shared database + shared schema + tenant key**. O tenant ativo é
+resolvido exclusivamente no backend pela variável `COMPANY_ID`; quando ela não
+está definida, a instalação legada usa `default-company`, criada pela migration da
+Fase 5. O frontend não envia `companyId` como mecanismo de autorização.
+
+Cada processo atende uma empresa. A API administrativa, os stores Prisma e a
+sessão WhatsApp usam o mesmo tenant. O `LocalAuth.clientId` do WhatsApp recebe o
+`companyId`, separando as sessões por empresa dentro de `.wwebjs_auth`.
+
+Para uma empresa adicional:
+
+1. crie o registro `Company` por um fluxo administrativo controlado no banco;
+2. configure `COMPANY_ID` com o `id` dessa empresa no processo correspondente;
+3. inicialize o WhatsApp desse processo para gerar a sessão própria da empresa.
+
+A migration `20260830050000_add_multi_tenant_architecture` preserva os registros
+anteriores, associa Customer/Conversation/Appointment a `default-company` e só
+depois torna as relações obrigatórias.
+
+A API expõe `GET /api/company/current` apenas para informar ao Dashboard qual
+empresa o backend já selecionou. Esse endpoint não troca tenant.
+
 # Fase 4 — Dashboard React
 
 ## Arquitetura
@@ -77,5 +101,3 @@ npm run dashboard:lint
 npm run dashboard:test
 npx prisma validate
 ```
-
-Não houve mudança no `prisma/schema.prisma` e não há migration da Fase 4.

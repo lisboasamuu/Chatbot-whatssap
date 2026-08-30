@@ -4,12 +4,14 @@ import { AppointmentService } from './appointments/appointment.service.js';
 import { ConversationEngine } from './conversation/conversation.engine.js';
 import { PrismaAdminRepository } from './database/prisma-admin.repository.js';
 import { PrismaAppointmentStore } from './database/prisma-appointment.store.js';
+import { PrismaCompanyLookup } from './database/prisma-company.lookup.js';
 import {
   connectDatabase,
   disconnectDatabase,
   prisma,
 } from './database/prisma.client.js';
 import { PrismaConversationStore } from './database/prisma-conversation.store.js';
+import { resolveTenantContext } from './tenant/tenant.context.js';
 import { createWhatsAppProvider } from './whatssap/whatsapp.client.js';
 
 const DEFAULT_ADMIN_HTTP_PORT = 3001;
@@ -29,17 +31,8 @@ function getAdminHttpPort(): number {
 }
 
 async function main(): Promise<void> {
-  const conversationStore = new PrismaConversationStore(prisma);
-  const appointmentStore = new PrismaAppointmentStore(prisma);
-  const appointmentService = new AppointmentService(appointmentStore);
-  const conversationEngine = new ConversationEngine(
-    conversationStore,
-    appointmentService,
-  );
-  const adminRepository = new PrismaAdminRepository(prisma);
-  const adminService = new AdminService(adminRepository);
-  const adminHttpServer = createAdminHttpServer(adminService);
-  const whatsapp = createWhatsAppProvider(conversationEngine);
+  let adminHttpServer: ReturnType<typeof createAdminHttpServer> | null = null;
+  let whatsapp: ReturnType<typeof createWhatsAppProvider> | null = null;
   let shuttingDown = false;
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
@@ -51,7 +44,7 @@ async function main(): Promise<void> {
     console.log(`[App] Sinal ${signal} recebido. Encerrando aplicação...`);
 
     await new Promise<void>((resolve) => {
-      if (!adminHttpServer.listening) {
+      if (!adminHttpServer?.listening) {
         resolve();
         return;
       }
@@ -65,11 +58,13 @@ async function main(): Promise<void> {
       });
     });
 
-    try {
-      await whatsapp.destroy();
-    } catch (error) {
-      console.error('[App] Erro ao encerrar cliente WhatsApp:', error);
-      process.exitCode = 1;
+    if (whatsapp) {
+      try {
+        await whatsapp.destroy();
+      } catch (error) {
+        console.error('[App] Erro ao encerrar cliente WhatsApp:', error);
+        process.exitCode = 1;
+      }
     }
 
     try {
@@ -92,18 +87,46 @@ async function main(): Promise<void> {
     await connectDatabase();
     console.log('[Database] PostgreSQL conectado.');
 
+    const tenant = await resolveTenantContext(
+      new PrismaCompanyLookup(prisma),
+      process.env.COMPANY_ID,
+    );
+    console.log(
+      `[Tenant] Empresa ativa: ${tenant.companyName} (${tenant.companyId}).`,
+    );
+
+    const conversationStore = new PrismaConversationStore(
+      prisma,
+      tenant.companyId,
+    );
+    const appointmentStore = new PrismaAppointmentStore(
+      prisma,
+      tenant.companyId,
+    );
+    const appointmentService = new AppointmentService(appointmentStore);
+    const conversationEngine = new ConversationEngine(
+      conversationStore,
+      appointmentService,
+    );
+    const adminRepository = new PrismaAdminRepository(prisma);
+    const adminService = new AdminService(adminRepository, tenant);
+    adminHttpServer = createAdminHttpServer(adminService);
+    whatsapp = createWhatsAppProvider(conversationEngine, tenant.companyId);
+
     const adminPort = getAdminHttpPort();
     adminHttpServer.listen(adminPort, () => {
-      console.log(`[Admin HTTP] Servidor disponível em http://localhost:${adminPort}.`);
+      console.log(
+        `[Admin HTTP] Servidor disponível em http://localhost:${adminPort}.`,
+      );
     });
 
     await whatsapp.initialize();
   } catch {
     console.error(
-      '[App] Falha ao inicializar dependências. Verifique PostgreSQL, configuração HTTP e WhatsApp.',
+      '[App] Falha ao inicializar dependências. Verifique PostgreSQL, tenant, configuração HTTP e WhatsApp.',
     );
     process.exitCode = 1;
-    if (adminHttpServer.listening) {
+    if (adminHttpServer?.listening) {
       adminHttpServer.close();
     }
     await disconnectDatabase().catch(() => undefined);

@@ -11,35 +11,40 @@ import type {
 export class PrismaAdminRepository implements AdminRepository {
   public constructor(private readonly prisma: PrismaClient) {}
 
-  public countCustomers(): Promise<number> {
-    return this.prisma.customer.count();
+  public countCustomers(companyId: string): Promise<number> {
+    return this.prisma.customer.count({ where: { companyId } });
   }
 
-  public countAppointmentsOnDate(date: string): Promise<number> {
-    return this.prisma.appointment.count({ where: { date } });
+  public countAppointmentsOnDate(companyId: string, date: string): Promise<number> {
+    return this.prisma.appointment.count({ where: { companyId, date } });
   }
 
-  public countUpcomingAppointments(date: string, time: string): Promise<number> {
+  public countUpcomingAppointments(
+    companyId: string,
+    date: string,
+    time: string,
+  ): Promise<number> {
     return this.prisma.appointment.count({
       where: {
+        companyId,
         OR: [{ date: { gt: date } }, { date, time: { gte: time } }],
       },
     });
   }
 
   public async listUpcomingAppointments(
+    companyId: string,
     date: string,
     time: string,
     limit: number,
   ): Promise<AdminAppointment[]> {
     const appointments = await this.prisma.appointment.findMany({
       where: {
+        companyId,
         OR: [{ date: { gt: date } }, { date, time: { gte: time } }],
       },
       include: {
-        customer: {
-          select: { externalId: true, name: true },
-        },
+        customer: { select: { externalId: true, name: true } },
       },
       orderBy: [{ date: 'asc' }, { time: 'asc' }],
       take: limit,
@@ -55,12 +60,11 @@ export class PrismaAdminRepository implements AdminRepository {
     }));
   }
 
-  public async listCustomers(): Promise<AdminCustomer[]> {
+  public async listCustomers(companyId: string): Promise<AdminCustomer[]> {
     const customers = await this.prisma.customer.findMany({
+      where: { companyId },
       include: {
-        _count: {
-          select: { appointments: true },
-        },
+        _count: { select: { appointments: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -75,16 +79,18 @@ export class PrismaAdminRepository implements AdminRepository {
   }
 
   public async findCustomerById(
+    companyId: string,
     customerId: string,
   ): Promise<AdminCustomerDetail | null> {
     const customer = await this.prisma.customer.findUnique({
-      where: { id: customerId },
+      where: {
+        companyId_id: { companyId, id: customerId },
+      },
       include: {
         appointments: {
+          where: { companyId },
           include: {
-            customer: {
-              select: { externalId: true, name: true },
-            },
+            customer: { select: { externalId: true, name: true } },
           },
           orderBy: [{ date: 'asc' }, { time: 'asc' }],
         },
@@ -117,10 +123,13 @@ export class PrismaAdminRepository implements AdminRepository {
   }
 
   public async findConversationByCustomerId(
+    companyId: string,
     customerId: string,
   ): Promise<AdminConversation | null> {
     const conversation = await this.prisma.conversation.findUnique({
-      where: { customerId },
+      where: {
+        companyId_customerId: { companyId, customerId },
+      },
       include: {
         messages: {
           orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],

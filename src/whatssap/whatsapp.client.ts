@@ -11,10 +11,14 @@ export class WhatsAppProvider {
   private readonly client: Client;
   private readonly inactivityManager: ConversationInactivityManager;
 
-  public constructor(conversationEngine: ConversationEngine) {
+  public constructor(
+    conversationEngine: ConversationEngine,
+    companyId: string,
+  ) {
     this.client = new Client({
       authStrategy: new LocalAuth({
         dataPath: AUTH_DATA_PATH,
+        clientId: companyId,
       }),
       puppeteer: {
         headless: true,
@@ -72,6 +76,7 @@ export class WhatsAppProvider {
 
 export function createWhatsAppProvider(
   conversationEngine: ConversationEngine,
+  companyId: string,
 ): WhatsAppProvider {
-  return new WhatsAppProvider(conversationEngine);
+  return new WhatsAppProvider(conversationEngine, companyId);
 }

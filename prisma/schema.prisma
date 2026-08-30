@@ -27,25 +27,44 @@ enum MessageDirection {
   OUTBOUND
 }
 
+model Company {
+  id            String         @id @default(cuid())
+  name          String
+  customers     Customer[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
 model Customer {
   id            String         @id @default(cuid())
-  externalId    String         @unique
+  companyId     String
+  company       Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  externalId    String
   name          String?
   conversations Conversation[]
   appointments  Appointment[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+
+  @@unique([companyId, externalId])
+  @@unique([companyId, id])
+  @@index([companyId, createdAt])
 }
 
 model Conversation {
   id         String            @id @default(cuid())
-  customerId String            @unique
-  customer   Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  companyId  String
+  customerId String
+  customer   Customer          @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Cascade)
   state      ConversationState @default(INITIAL)
   context    Json?
   messages   Message[]
   createdAt  DateTime          @default(now())
   updatedAt  DateTime          @updatedAt
+
+  @@unique([companyId, customerId])
+  @@unique([companyId, id])
+  @@index([companyId, updatedAt])
 }
 
 model Message {
@@ -61,13 +80,15 @@ model Message {
 
 model Appointment {
   id         String   @id @default(cuid())
+  companyId  String
   customerId String
-  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customer   Customer @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Cascade)
   date       String
   time       String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@unique([date, time])
-  @@index([customerId, date, time])
+  @@unique([companyId, date, time])
+  @@unique([companyId, id])
+  @@index([companyId, customerId, date, time])
 }

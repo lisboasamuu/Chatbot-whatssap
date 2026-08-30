@@ -77,6 +77,11 @@ async function handleRequest(
     return;
   }
 
+  if (url.pathname === '/api/company/current') {
+    sendJson(response, 200, { company: service.getCompany() });
+    return;
+  }
+
   if (url.pathname === '/api/dashboard/summary') {
     const limit = parseLimit(url, 5, 20);
     if (limit === null) {

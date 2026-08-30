@@ -1,3 +1,8 @@
+export interface Company {
+  id: string;
+  name: string;
+}
+
 export interface Appointment {
   id: string;
   customerId: string;
