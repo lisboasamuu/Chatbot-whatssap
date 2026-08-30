@@ -1,6 +1,11 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 
 import { AdminResourceNotFoundError, type AdminService } from './admin.service.js';
+import {
+  handlePlatformError,
+  handlePlatformRequest,
+  type PlatformHttpDependencies,
+} from '../platform-admin/platform-admin.http.js';
 
 interface ErrorBody {
   error: {
@@ -64,7 +69,11 @@ async function handleRequest(
   request: IncomingMessage,
   response: ServerResponse,
   service: AdminService,
+  platform?: PlatformHttpDependencies,
 ): Promise<void> {
+  if (platform && await handlePlatformRequest(request, response, platform)) {
+    return;
+  }
   if (request.method !== 'GET') {
     sendError(response, 405, 'METHOD_NOT_ALLOWED', 'Method not allowed.');
     return;
@@ -121,9 +130,15 @@ async function handleRequest(
   sendError(response, 404, 'NOT_FOUND', 'Resource not found.');
 }
 
-export function createAdminHttpServer(service: AdminService): Server {
+export function createAdminHttpServer(
+  service: AdminService,
+  platform?: PlatformHttpDependencies,
+): Server {
   return createServer((request, response) => {
-    void handleRequest(request, response, service).catch((error: unknown) => {
+    void handleRequest(request, response, service, platform).catch((error: unknown) => {
+      if (handlePlatformError(response, error)) {
+        return;
+      }
       if (error instanceof AdminResourceNotFoundError) {
         sendError(response, 404, 'NOT_FOUND', error.message);
         return;

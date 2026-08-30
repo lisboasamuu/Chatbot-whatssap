@@ -34,16 +34,33 @@ export class AdminService {
     private readonly repository: AdminRepository,
     private readonly tenant: TenantContext,
     private readonly clock: () => Date = () => new Date(),
+    private readonly timezone?: string,
   ) {}
+
+  private currentDateTime(): { date: string; time: string } {
+    const now = this.clock();
+    if (!this.timezone) {
+      return { date: formatLocalDate(now), time: formatLocalTime(now) };
+    }
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: this.timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(now);
+    const value = (type: Intl.DateTimeFormatPartTypes): string =>
+      parts.find((part) => part.type === type)?.value ?? '';
+    return {
+      date: `${value('year')}-${value('month')}-${value('day')}`,
+      time: `${value('hour')}:${value('minute')}`,
+    };
+  }
 
   public getCompany(): AdminCompany {
     return { id: this.tenant.companyId, name: this.tenant.companyName };
   }
 
   public async getSummary(limit = 5): Promise<DashboardSummary> {
-    const now = this.clock();
-    const date = formatLocalDate(now);
-    const time = formatLocalTime(now);
+    const { date, time } = this.currentDateTime();
     const companyId = this.tenant.companyId;
 
     const [
@@ -67,11 +84,11 @@ export class AdminService {
   }
 
   public async listUpcomingAppointments(limit = 100): Promise<AdminAppointment[]> {
-    const now = this.clock();
+    const { date, time } = this.currentDateTime();
     return this.repository.listUpcomingAppointments(
       this.tenant.companyId,
-      formatLocalDate(now),
-      formatLocalTime(now),
+      date,
+      time,
       limit,
     );
   }

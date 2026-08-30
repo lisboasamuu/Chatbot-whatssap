@@ -1,3 +1,48 @@
+# Fase 5.5 — Platform Admin & Company Configuration
+
+O Platform Admin privado está disponível em `/platform`. As operações cross-tenant
+são autorizadas exclusivamente no backend por uma sessão administrativa criada após
+login com `PLATFORM_ADMIN_PASSWORD`. A senha nunca é enviada ao frontend fora do
+POST de login, não é persistida no banco e deve ter pelo menos 16 caracteres.
+
+A sessão usa token aleatório de 256 bits armazenado somente em memória no processo,
+cookie `HttpOnly` + `SameSite=Strict` (`Secure` quando `NODE_ENV=production`),
+30 minutos de inatividade, duração máxima de 8 horas, rate limit de login e validação
+de origem para operações mutáveis. Reiniciar o backend encerra todas as sessões.
+
+O Platform Admin permite criar, listar, configurar, ativar e desativar empresas sem
+alteração manual de código ou banco. Novas empresas começam `INACTIVE` para que
+horários e mensagens sejam configurados antes da ativação. Cada Company possui timezone IANA, horários
+semanais, templates opcionais com fallback e configuração Pix/antecipação apenas
+persistida. Esta fase não gera cobranças, QR Codes ou confirma pagamentos.
+
+Horários são persistidos como períodos por dia. A ausência de períodos em um dia
+significa fechado; múltiplos períodos representam intervalos naturais. A migration
+preserva o comportamento legado de `default-company` criando períodos 00:00–23:59
+nos sete dias. Novas empresas começam sem horários e, portanto, sem slots disponíveis
+até serem configuradas.
+
+`Company.status = INACTIVE` preserva todo o histórico. O processo não inicializa
+WhatsApp quando já inicia com a empresa inativa e o ConversationEngine também
+bloqueia novas mensagens em tempo de execução após desativação. Criação e remarcação
+de agendamentos validam status e Business Hours no backend.
+
+Valores de antecipação nunca usam `Float`: `FIXED` é armazenado em centavos e
+`PERCENTAGE` em basis points (100 = 1%). `NONE` não possui valor.
+
+Variáveis relevantes:
+
+```text
+DATABASE_URL
+COMPANY_ID
+ADMIN_HTTP_PORT
+PLATFORM_ADMIN_PASSWORD
+NODE_ENV
+```
+
+Em produção, publique o backend somente por HTTPS para que o cookie administrativo
+seja enviado com `Secure`.
+
 # Fase 5 — Multiempresa
 
 A aplicação usa **shared database + shared schema + tenant key**. O tenant ativo é
@@ -9,11 +54,9 @@ Cada processo atende uma empresa. A API administrativa, os stores Prisma e a
 sessão WhatsApp usam o mesmo tenant. O `LocalAuth.clientId` do WhatsApp recebe o
 `companyId`, separando as sessões por empresa dentro de `.wwebjs_auth`.
 
-Para uma empresa adicional:
-
-1. crie o registro `Company` por um fluxo administrativo controlado no banco;
-2. configure `COMPANY_ID` com o `id` dessa empresa no processo correspondente;
-3. inicialize o WhatsApp desse processo para gerar a sessão própria da empresa.
+Para uma empresa adicional, cadastre e configure a Company pelo Platform Admin.
+O processo WhatsApp continua usando `COMPANY_ID` como identificador operacional da
+instância, conforme a arquitetura da Fase 5; não é necessário editar código ou banco.
 
 A migration `20260830050000_add_multi_tenant_architecture` preserva os registros
 anteriores, associa Customer/Conversation/Appointment a `default-company` e só

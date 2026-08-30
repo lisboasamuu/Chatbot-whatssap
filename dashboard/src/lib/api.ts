@@ -5,6 +5,12 @@ import type {
   Customer,
   CustomerDetail,
   DashboardSummary,
+  PlatformCompany,
+  PlatformCompanyDetail,
+  PlatformSummary,
+  BusinessHour,
+  MessageTemplate,
+  CompanySettings,
 } from '../types';
 
 interface ApiErrorBody {
@@ -13,9 +19,11 @@ interface ApiErrorBody {
   };
 }
 
-async function request<T>(path: string): Promise<T> {
+async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
-    headers: { Accept: 'application/json' },
+    credentials: 'same-origin',
+    ...init,
+    headers: { Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers ?? {}) },
   });
 
   if (!response.ok) {
@@ -35,6 +43,28 @@ async function request<T>(path: string): Promise<T> {
 }
 
 export const api = {
+
+  platformSession: (): Promise<boolean> =>
+    request<{ authenticated: boolean }>('/api/platform/auth/session').then(({authenticated})=>authenticated),
+  platformLogin: (password:string): Promise<void> =>
+    request('/api/platform/auth/login',{method:'POST',body:JSON.stringify({password})}).then(()=>undefined),
+  platformLogout: (): Promise<void> =>
+    request('/api/platform/auth/logout',{method:'POST'}).then(()=>undefined),
+  getPlatformSummary: (): Promise<PlatformSummary> => request('/api/platform/summary'),
+  getCompanies: (): Promise<PlatformCompany[]> =>
+    request<{companies:PlatformCompany[]}>('/api/platform/companies').then(({companies})=>companies),
+  createCompany: (input:{name:string;timezone:string}): Promise<PlatformCompanyDetail> =>
+    request<{company:PlatformCompanyDetail}>('/api/platform/companies',{method:'POST',body:JSON.stringify(input)}).then(({company})=>company),
+  getPlatformCompany: (id:string): Promise<PlatformCompanyDetail> =>
+    request<{company:PlatformCompanyDetail}>(`/api/platform/companies/${encodeURIComponent(id)}`).then(({company})=>company),
+  updatePlatformCompany: (id:string,input:Partial<Pick<PlatformCompanyDetail,'name'|'timezone'|'status'>>): Promise<PlatformCompanyDetail> =>
+    request<{company:PlatformCompanyDetail}>(`/api/platform/companies/${encodeURIComponent(id)}`,{method:'PATCH',body:JSON.stringify(input)}).then(({company})=>company),
+  saveBusinessHours: (id:string,hours:BusinessHour[]): Promise<PlatformCompanyDetail> =>
+    request<{company:PlatformCompanyDetail}>(`/api/platform/companies/${encodeURIComponent(id)}/business-hours`,{method:'PUT',body:JSON.stringify({hours})}).then(({company})=>company),
+  saveMessageTemplates: (id:string,templates:MessageTemplate[]): Promise<PlatformCompanyDetail> =>
+    request<{company:PlatformCompanyDetail}>(`/api/platform/companies/${encodeURIComponent(id)}/messages`,{method:'PUT',body:JSON.stringify({templates})}).then(({company})=>company),
+  saveCompanySettings: (id:string,settings:CompanySettings): Promise<PlatformCompanyDetail> =>
+    request<{company:PlatformCompanyDetail}>(`/api/platform/companies/${encodeURIComponent(id)}/settings`,{method:'PUT',body:JSON.stringify(settings)}).then(({company})=>company),
   getCurrentCompany: (): Promise<Company> =>
     request<{ company: Company }>('/api/company/current').then(({ company }) => company),
   getSummary: (): Promise<DashboardSummary> =>

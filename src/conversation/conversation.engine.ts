@@ -20,7 +20,7 @@ export const FALLBACK_REPLY = 'Desculpe, não entendi.';
 
 //Atualizando a default reply para suportar mensagem mais profissional ao atendimento
 export const DEFAULT_REPLY = [
-  'Olá! 👋 Bem-vindo à Clínica Lisboa.',
+  'Olá! 👋 Bem-vindo.',
   '',
   'Como posso ajudar?',
   '',
@@ -47,9 +47,22 @@ const SLOT_UNAVAILABLE_REPLY =
 const INVALID_NAME_REPLY =
   'Nome inválido. Informe seu nome usando apenas letras, espaços, hífen ou apóstrofo.';
 const COURTESY_REPLY = 'Um prazer ter você aqui. 😊';
-const THANK_YOU_SUFFIX = ' Obrigado pela preferência!';
 export const INACTIVITY_REPLY =
   'Atendimento encerrado automaticamente por inatividade. Quando precisar, é só enviar uma nova mensagem. Até logo! 👋';
+
+export interface ConversationMessageTemplateProvider {
+  getMessageTemplate(type: 'WELCOME' | 'APPOINTMENT_CREATED' | 'APPOINTMENT_CANCELLED' | 'APPOINTMENT_RESCHEDULED' | 'NO_APPOINTMENTS' | 'BUSINESS_CLOSED'): Promise<string | null>;
+  isActive?(): Promise<boolean>;
+}
+
+const TEMPLATE_DEFAULTS = {
+  WELCOME: DEFAULT_REPLY,
+  APPOINTMENT_CREATED: 'Agendamento confirmado para {{date}} às {{time}}. Obrigado pela preferência!',
+  APPOINTMENT_CANCELLED: 'Agendamento cancelado com sucesso. Obrigado pela preferência!',
+  APPOINTMENT_RESCHEDULED: 'Agendamento remarcado para {{date}} às {{time}}. Obrigado pela preferência!',
+  NO_APPOINTMENTS: 'Você não possui agendamentos.',
+  BUSINESS_CLOSED: 'Esse horário está fora do horário de atendimento. Envie outro horário no formato HH:mm.',
+} as const;
 
 const ACTIVE_COMMANDS = new Set([
   'agendar',
@@ -212,7 +225,20 @@ export class ConversationEngine {
   public constructor(
     private readonly store: ConversationStore,
     private readonly appointmentService: AppointmentService,
+    private readonly messageTemplates?: ConversationMessageTemplateProvider,
   ) {}
+
+  private async template(
+    type: keyof typeof TEMPLATE_DEFAULTS,
+    variables: Record<string, string> = {},
+  ): Promise<string> {
+    const custom = await this.messageTemplates?.getMessageTemplate(type);
+    let body = custom ?? TEMPLATE_DEFAULTS[type];
+    for (const [key, value] of Object.entries(variables)) {
+      body = body.replaceAll(`{{${key}}}`, value);
+    }
+    return body;
+  }
 
   public async handle(input: ConversationInput): Promise<ConversationResult> {
     const externalUserId = input.conversationId.trim();
@@ -222,6 +248,15 @@ export class ConversationEngine {
         conversationId: '',
         reply: FALLBACK_REPLY,
         state: 'INITIAL',
+      };
+    }
+
+    if (this.messageTemplates?.isActive && !(await this.messageTemplates.isActive())) {
+      return {
+        conversationId: externalUserId,
+        reply: await this.template('BUSINESS_CLOSED'),
+        state: 'INITIAL',
+        ended: true,
       };
     }
 
@@ -262,7 +297,7 @@ export class ConversationEngine {
         return this.handleActive(session, command);
       }
 
-      return this.transition(session, 'ACTIVE', null, DEFAULT_REPLY);
+      return this.transition(session, 'ACTIVE', null, await this.template('WELCOME'));
     }
 
     switch (session.state) {
@@ -301,6 +336,15 @@ export class ConversationEngine {
         conversationId: '',
         reply: INACTIVITY_REPLY,
         state: 'INITIAL',
+      };
+    }
+
+    if (this.messageTemplates?.isActive && !(await this.messageTemplates.isActive())) {
+      return {
+        conversationId: id,
+        reply: await this.template('BUSINESS_CLOSED'),
+        state: 'INITIAL',
+        ended: true,
       };
     }
 
@@ -344,7 +388,7 @@ export class ConversationEngine {
         );
         const reply =
           appointments.length === 0
-            ? 'Você não possui agendamentos.'
+            ? await this.template('NO_APPOINTMENTS')
             : `Seus agendamentos:\n\n${formatAppointmentList(appointments)}`;
 
         if (session.state === 'INITIAL') {
@@ -411,7 +455,7 @@ export class ConversationEngine {
         );
 
       default:
-        return this.result(session, DEFAULT_REPLY, 'ACTIVE');
+        return this.result(session, await this.template('WELCOME'), 'ACTIVE');
     }
   }
 
@@ -546,13 +590,23 @@ export class ConversationEngine {
       );
     }
 
+    if (result.status === 'OUTSIDE_BUSINESS_HOURS') {
+      return this.transition(
+        session,
+        'SCHEDULING_TIME',
+        { draftDate: session.context.draftDate },
+        await this.template('BUSINESS_CLOSED'),
+      );
+    }
+
     return this.transition(
       session,
       'ACTIVE',
       { awaitingCourtesyReply: true },
-      `Agendamento confirmado para ${formatDateForDisplay(
-        result.appointment.date,
-      )} às ${result.appointment.time}.${THANK_YOU_SUFFIX}`,
+      await this.template('APPOINTMENT_CREATED', {
+        date: formatDateForDisplay(result.appointment.date),
+        time: result.appointment.time,
+      }),
     );
   }
 
@@ -634,7 +688,7 @@ export class ConversationEngine {
         session,
         'ACTIVE',
         { awaitingCourtesyReply: true },
-        `Agendamento cancelado com sucesso.${THANK_YOU_SUFFIX}`,
+        await this.template('APPOINTMENT_CANCELLED'),
       );
     }
 
@@ -804,6 +858,18 @@ export class ConversationEngine {
       );
     }
 
+    if (result.status === 'OUTSIDE_BUSINESS_HOURS') {
+      return this.transition(
+        session,
+        'RESCHEDULING_TIME',
+        {
+          selectedAppointmentId: session.context.selectedAppointmentId,
+          draftDate: session.context.draftDate,
+        },
+        await this.template('BUSINESS_CLOSED'),
+      );
+    }
+
     if (result.status === 'NOT_FOUND') {
       return this.transition(
         session,
@@ -817,9 +883,10 @@ export class ConversationEngine {
       session,
       'ACTIVE',
       { awaitingCourtesyReply: true },
-      `Agendamento remarcado para ${formatDateForDisplay(
-        result.appointment.date,
-      )} às ${result.appointment.time}.${THANK_YOU_SUFFIX}`,
+      await this.template('APPOINTMENT_RESCHEDULED', {
+        date: formatDateForDisplay(result.appointment.date),
+        time: result.appointment.time,
+      }),
     );
   }
 

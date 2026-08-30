@@ -9,10 +9,16 @@ import {
   type Clock,
 } from './appointment.types.js';
 
+export interface AppointmentAvailabilityPolicy {
+  isSlotWithinBusinessHours(date: string, time: string): Promise<boolean>;
+  assertActive(): Promise<void>;
+}
+
 export type CreateAppointmentResult =
   | { status: 'CREATED'; appointment: Appointment }
   | { status: 'SLOT_UNAVAILABLE' }
-  | { status: 'INVALID_SLOT' };
+  | { status: 'INVALID_SLOT' }
+  | { status: 'OUTSIDE_BUSINESS_HOURS' };
 
 export type CancelAppointmentResult =
   | { status: 'CANCELLED' }
@@ -22,6 +28,7 @@ export type RescheduleAppointmentResult =
   | { status: 'RESCHEDULED'; appointment: Appointment }
   | { status: 'SLOT_UNAVAILABLE' }
   | { status: 'INVALID_SLOT' }
+  | { status: 'OUTSIDE_BUSINESS_HOURS' }
   | { status: 'NOT_FOUND' };
 
 const systemClock: Clock = () => new Date();
@@ -30,14 +37,32 @@ export class AppointmentService {
   public constructor(
     private readonly store: AppointmentStore,
     private readonly clock: Clock = systemClock,
+    private readonly availabilityPolicy?: AppointmentAvailabilityPolicy,
+    private readonly timezone?: string,
   ) {}
 
+  private localNowParts(): { date: string; time: string } | null {
+    if (!this.timezone) return null;
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: this.timezone,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).formatToParts(this.clock());
+    const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value ?? '';
+    return {
+      date: `${value('year')}-${value('month')}-${value('day')}`,
+      time: `${value('hour')}:${value('minute')}`,
+    };
+  }
+
   public isDateTodayOrFuture(date: string): boolean {
-    return isDateTodayOrFuture(date, this.clock());
+    const local = this.localNowParts();
+    return local ? date >= local.date : isDateTodayOrFuture(date, this.clock());
   }
 
   public isFutureSlot(date: string, time: string): boolean {
-    return isFutureSlot(date, time, this.clock());
+    const local = this.localNowParts();
+    return local ? date > local.date || (date === local.date && time > local.time) : isFutureSlot(date, time, this.clock());
   }
 
   public async create(
@@ -48,6 +73,12 @@ export class AppointmentService {
   ): Promise<CreateAppointmentResult> {
     if (!this.isFutureSlot(date, time)) {
       return { status: 'INVALID_SLOT' };
+    }
+    if (this.availabilityPolicy) {
+      await this.availabilityPolicy.assertActive();
+      if (!(await this.availabilityPolicy.isSlotWithinBusinessHours(date, time))) {
+        return { status: 'OUTSIDE_BUSINESS_HOURS' };
+      }
     }
 
     try {
@@ -95,6 +126,12 @@ export class AppointmentService {
   ): Promise<RescheduleAppointmentResult> {
     if (!this.isFutureSlot(date, time)) {
       return { status: 'INVALID_SLOT' };
+    }
+    if (this.availabilityPolicy) {
+      await this.availabilityPolicy.assertActive();
+      if (!(await this.availabilityPolicy.isSlotWithinBusinessHours(date, time))) {
+        return { status: 'OUTSIDE_BUSINESS_HOURS' };
+      }
     }
 
     try {

@@ -3,6 +3,10 @@ import { createAdminHttpServer } from './admin/admin.http.js';
 import { AppointmentService } from './appointments/appointment.service.js';
 import { ConversationEngine } from './conversation/conversation.engine.js';
 import { PrismaAdminRepository } from './database/prisma-admin.repository.js';
+import { PrismaCompanyConfigService } from './company-config/company-config.service.js';
+import { PrismaPlatformAdminRepository } from './database/prisma-platform-admin.repository.js';
+import { PlatformAdminService } from './platform-admin/platform-admin.service.js';
+import { PlatformAdminAuth } from './platform-admin/platform-admin.auth.js';
 import { PrismaAppointmentStore } from './database/prisma-appointment.store.js';
 import { PrismaCompanyLookup } from './database/prisma-company.lookup.js';
 import {
@@ -28,6 +32,14 @@ function getAdminHttpPort(): number {
   }
 
   return port;
+}
+
+function getPlatformAdminPassword(): string {
+  const password = process.env.PLATFORM_ADMIN_PASSWORD?.trim();
+  if (!password) {
+    throw new Error('PLATFORM_ADMIN_PASSWORD is required.');
+  }
+  return password;
 }
 
 async function main(): Promise<void> {
@@ -103,15 +115,38 @@ async function main(): Promise<void> {
       prisma,
       tenant.companyId,
     );
-    const appointmentService = new AppointmentService(appointmentStore);
+    const companyConfig = new PrismaCompanyConfigService(prisma, tenant.companyId);
+    const operationalConfig = await companyConfig.getOperationalConfig();
+    const appointmentService = new AppointmentService(
+      appointmentStore,
+      undefined,
+      companyConfig,
+      operationalConfig.timezone,
+    );
     const conversationEngine = new ConversationEngine(
       conversationStore,
       appointmentService,
+      companyConfig,
     );
     const adminRepository = new PrismaAdminRepository(prisma);
-    const adminService = new AdminService(adminRepository, tenant);
-    adminHttpServer = createAdminHttpServer(adminService);
-    whatsapp = createWhatsAppProvider(conversationEngine, tenant.companyId);
+    const adminService = new AdminService(adminRepository, tenant, undefined, operationalConfig.timezone);
+    const platformService = new PlatformAdminService(
+      new PrismaPlatformAdminRepository(prisma),
+    );
+    const platformAuth = new PlatformAdminAuth(
+      getPlatformAdminPassword(),
+      process.env.NODE_ENV === 'production',
+    );
+    adminHttpServer = createAdminHttpServer(adminService, {
+      service: platformService,
+      auth: platformAuth,
+    });
+
+    if (operationalConfig.status === 'ACTIVE') {
+      whatsapp = createWhatsAppProvider(conversationEngine, tenant.companyId);
+    } else {
+      console.warn('[Tenant] Empresa inativa: WhatsApp não será inicializado.');
+    }
 
     const adminPort = getAdminHttpPort();
     adminHttpServer.listen(adminPort, () => {
@@ -120,7 +155,9 @@ async function main(): Promise<void> {
       );
     });
 
-    await whatsapp.initialize();
+    if (whatsapp) {
+      await whatsapp.initialize();
+    }
   } catch {
     console.error(
       '[App] Falha ao inicializar dependências. Verifique PostgreSQL, tenant, configuração HTTP e WhatsApp.',

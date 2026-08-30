@@ -46,3 +46,36 @@ export interface DashboardSummary {
   upcomingAppointments: number;
   nextAppointments: Appointment[];
 }
+
+export type CompanyStatus = 'ACTIVE' | 'INACTIVE';
+export type Weekday = 'MONDAY'|'TUESDAY'|'WEDNESDAY'|'THURSDAY'|'FRIDAY'|'SATURDAY'|'SUNDAY';
+export type MessageTemplateType = 'WELCOME'|'APPOINTMENT_CREATED'|'APPOINTMENT_CANCELLED'|'APPOINTMENT_RESCHEDULED'|'NO_APPOINTMENTS'|'BUSINESS_CLOSED';
+export type DepositType = 'NONE'|'FIXED'|'PERCENTAGE';
+
+export interface PlatformCompany {
+  id: string;
+  name: string;
+  status: CompanyStatus;
+  timezone: string;
+  createdAt: string;
+  updatedAt: string;
+  customerCount: number;
+  appointmentCount: number;
+}
+export interface BusinessHour { weekday: Weekday; startTime: string; endTime: string; }
+export interface MessageTemplate { type: MessageTemplateType; body: string; }
+export interface CompanySettings {
+  pixEnabled: boolean;
+  pixKey: string | null;
+  pixRecipientName: string | null;
+  depositType: DepositType;
+  depositValue: number | null;
+}
+export interface PlatformCompanyDetail extends PlatformCompany {
+  businessHours: BusinessHour[];
+  messageTemplates: MessageTemplate[];
+  settings: CompanySettings;
+}
+export interface PlatformSummary {
+  totalCompanies:number; activeCompanies:number; inactiveCompanies:number; totalAppointments:number;
+}
