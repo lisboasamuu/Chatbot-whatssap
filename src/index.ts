@@ -9,6 +9,7 @@ import { PlatformAdminService } from './platform-admin/platform-admin.service.js
 import { PlatformAdminAuth } from './platform-admin/platform-admin.auth.js';
 import { PrismaAppointmentStore } from './database/prisma-appointment.store.js';
 import { PrismaCompanyLookup } from './database/prisma-company.lookup.js';
+import { PrismaReminderRepository } from './database/prisma-reminder.repository.js';
 import {
   connectDatabase,
   disconnectDatabase,
@@ -16,6 +17,11 @@ import {
 } from './database/prisma.client.js';
 import { PrismaConversationStore } from './database/prisma-conversation.store.js';
 import { resolveTenantContext } from './tenant/tenant.context.js';
+import { UnavailableReminderMessenger } from './reminders/reminder.messenger.js';
+import {
+  AppointmentReminderWorker,
+  ReminderScheduler,
+} from './reminders/reminder.worker.js';
 import { createWhatsAppProvider } from './whatssap/whatsapp.client.js';
 
 const DEFAULT_ADMIN_HTTP_PORT = 3001;
@@ -45,6 +51,7 @@ function getPlatformAdminPassword(): string {
 async function main(): Promise<void> {
   let adminHttpServer: ReturnType<typeof createAdminHttpServer> | null = null;
   let whatsapp: ReturnType<typeof createWhatsAppProvider> | null = null;
+  let reminderScheduler: ReminderScheduler | null = null;
   let shuttingDown = false;
 
   const shutdown = async (signal: NodeJS.Signals): Promise<void> => {
@@ -69,6 +76,10 @@ async function main(): Promise<void> {
         resolve();
       });
     });
+
+    if (reminderScheduler) {
+      await reminderScheduler.stop();
+    }
 
     if (whatsapp) {
       try {
@@ -148,6 +159,13 @@ async function main(): Promise<void> {
       console.warn('[Tenant] Empresa inativa: WhatsApp não será inicializado.');
     }
 
+    const reminderWorker = new AppointmentReminderWorker(
+      new PrismaReminderRepository(prisma),
+      whatsapp ?? new UnavailableReminderMessenger(),
+      tenant.companyId,
+    );
+    reminderScheduler = new ReminderScheduler(reminderWorker);
+
     const adminPort = getAdminHttpPort();
     adminHttpServer.listen(adminPort, () => {
       console.log(
@@ -158,9 +176,11 @@ async function main(): Promise<void> {
     if (whatsapp) {
       await whatsapp.initialize();
     }
-  } catch {
+    reminderScheduler.start();
+  } catch (error) {
     console.error(
-      '[App] Falha ao inicializar dependências. Verifique PostgreSQL, tenant, configuração HTTP e WhatsApp.',
+      '[App] Falha ao inicializar dependências:',
+      error instanceof Error ? error.message : error,
     );
     process.exitCode = 1;
     if (adminHttpServer?.listening) {

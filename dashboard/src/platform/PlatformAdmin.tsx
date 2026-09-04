@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import type {
   BusinessHour, CompanySettings, MessageTemplate, MessageTemplateType,
-  PlatformCompany, PlatformCompanyDetail, PlatformSummary, Weekday,
+  PlatformCompany, PlatformCompanyDetail, PlatformSummary,
+  ReminderOffsetMinutes, Weekday,
 } from '../types';
 import { api } from '../lib/api';
 
@@ -18,6 +19,7 @@ const TEMPLATE_LABELS:Record<MessageTemplateType,string>={
   APPOINTMENT_RESCHEDULED:'Agendamento remarcado',
   NO_APPOINTMENTS:'Nenhum agendamento',
   BUSINESS_CLOSED:'Fora do horário de atendimento',
+  REMINDER:'Lembrete de agendamento',
 };
 const DEFAULT_MESSAGES:Record<MessageTemplateType,string>={
   WELCOME:'Olá! 👋 Bem-vindo. Como posso ajudar?',
@@ -26,7 +28,15 @@ const DEFAULT_MESSAGES:Record<MessageTemplateType,string>={
   APPOINTMENT_RESCHEDULED:'Agendamento remarcado para {{date}} às {{time}}. Obrigado pela preferência!',
   NO_APPOINTMENTS:'Você não possui agendamentos.',
   BUSINESS_CLOSED:'Esse horário está fora do horário de atendimento. Envie outro horário no formato HH:mm.',
+  REMINDER:'Olá, {{customerName}}! Este é um lembrete do seu agendamento na {{companyName}} em {{date}} às {{time}}.',
 };
+const REMINDER_PRESETS:Array<{value:ReminderOffsetMinutes;label:string}>=[
+  {value:1440,label:'24 horas antes'},
+  {value:720,label:'12 horas antes'},
+  {value:240,label:'4 horas antes'},
+  {value:60,label:'1 hora antes'},
+  {value:30,label:'30 minutos antes'},
+];
 
 function Card({children,className=''}:{children:ReactNode;className?:string}) {
   return <section className={`rounded-2xl border border-white/8 bg-[#151515] p-5 shadow-sm ${className}`}>{children}</section>;
@@ -124,12 +134,13 @@ function NewCompany({onCreated}:{onCreated:(c:PlatformCompanyDetail)=>void}) {
   return <Card><form onSubmit={submit} className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end"><label className="text-sm text-zinc-400">Nome<input value={name} onChange={e=>setName(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-[#0d0d0d] px-3 py-2.5 text-zinc-100 outline-none focus:border-orange-500"/></label><label className="text-sm text-zinc-400">Timezone<input value={timezone} onChange={e=>setTimezone(e.target.value)} className="mt-2 w-full rounded-xl border border-white/10 bg-[#0d0d0d] px-3 py-2.5 text-zinc-100 outline-none focus:border-orange-500"/></label><button disabled={saving} className="rounded-xl bg-orange-500 px-5 py-2.5 font-semibold text-black disabled:opacity-50">{saving?'Salvando…':'Cadastrar'}</button>{error&&<p className="text-sm text-red-300 md:col-span-3">{error}</p>}</form></Card>;
 }
 function CompanyEditor({company,onSaved}:{company:PlatformCompanyDetail;onChange:(c:PlatformCompanyDetail)=>void;onSaved:(c:PlatformCompanyDetail)=>void}) {
-  const [section,setSection]=useState<'general'|'hours'|'messages'|'pix'>('general');
+  const [section,setSection]=useState<'general'|'hours'|'messages'|'reminders'|'pix'>('general');
   return <div className="space-y-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="flex items-center gap-2"><h2 className="text-2xl font-semibold">{company.name}</h2><Badge active={company.status==='ACTIVE'}/></div><p className="mt-1 text-sm text-zinc-500">{company.id}</p></div></div>
-    <div className="flex gap-2 overflow-x-auto pb-1">{([['general','Visão geral'],['hours','Horários'],['messages','Mensagens'],['pix','Pix / Antecipação']] as const).map(([k,l])=><button key={k} onClick={()=>setSection(k)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm ${section===k?'bg-orange-500 text-black':'bg-[#151515] text-zinc-400 hover:text-zinc-200'}`}>{l}</button>)}</div>
+    <div className="flex gap-2 overflow-x-auto pb-1">{([['general','Visão geral'],['hours','Horários'],['messages','Mensagens'],['reminders','Lembretes'],['pix','Pix / Antecipação']] as const).map(([k,l])=><button key={k} onClick={()=>setSection(k)} className={`whitespace-nowrap rounded-xl px-4 py-2 text-sm ${section===k?'bg-orange-500 text-black':'bg-[#151515] text-zinc-400 hover:text-zinc-200'}`}>{l}</button>)}</div>
     {section==='general'&&<General company={company} onSaved={onSaved}/>}
     {section==='hours'&&<Hours company={company} onSaved={onSaved}/>}
     {section==='messages'&&<Messages company={company} onSaved={onSaved}/>}
+    {section==='reminders'&&<Reminders company={company} onSaved={onSaved}/>}
     {section==='pix'&&<Pix company={company} onSaved={onSaved}/>}
   </div>;
 }
@@ -152,12 +163,22 @@ function Hours({company,onSaved}:{company:PlatformCompanyDetail;onSaved:(c:Platf
     <div className="mt-6 divide-y divide-white/6">{WEEKDAYS.map(day=>{const ps=byDay.get(day.key)??[];return <div key={day.key} className="grid gap-3 py-4 md:grid-cols-[180px_1fr]"><div><strong className="text-sm">{day.label}</strong><span className="mt-1 block text-xs text-zinc-500">{ps.length?'Aberto':'Fechado'}</span></div><div className="space-y-2">{ps.map((p,i)=><div key={`${p.startTime}-${i}`} className="flex flex-wrap items-center gap-2"><input type="time" value={p.startTime} onChange={e=>update(day.key,i,'startTime',e.target.value)} className="time-field"/><span className="text-zinc-600">até</span><input type="time" value={p.endTime} onChange={e=>update(day.key,i,'endTime',e.target.value)} className="time-field"/><button onClick={()=>remove(day.key,i)} className="rounded-lg px-2 py-2 text-xs text-zinc-500 hover:bg-red-500/10 hover:text-red-300">remover</button></div>)}<button onClick={()=>add(day.key)} className="text-sm font-medium text-orange-300 hover:text-orange-200">+ Adicionar período</button></div></div>})}</div><SaveFeedback message={msg}/></Card>;
 }
 function Messages({company,onSaved}:{company:PlatformCompanyDetail;onSaved:(c:PlatformCompanyDetail)=>void}) {
-  const types=Object.keys(TEMPLATE_LABELS) as MessageTemplateType[];
+  const types=(Object.keys(TEMPLATE_LABELS) as MessageTemplateType[]).filter(type=>type!=='REMINDER');
   const [templates,setTemplates]=useState<MessageTemplate[]>(company.messageTemplates),[msg,setMsg]=useState('');
   function body(type:MessageTemplateType){return templates.find(t=>t.type===type)?.body??'';}
   function set(type:MessageTemplateType,value:string){setTemplates(v=>[...v.filter(t=>t.type!==type),...(value?[{type,body:value}]:[])]);}
   async function save(){try{onSaved(await api.saveMessageTemplates(company.id,templates));setMsg('Mensagens salvas.');}catch(e){setMsg(e instanceof Error?e.message:'Erro ao salvar.');}}
   return <div className="space-y-4">{types.map(type=><Card key={type}><div className="flex items-center justify-between"><div><h3 className="font-semibold">{TEMPLATE_LABELS[type]}</h3><p className="mt-1 text-xs text-zinc-500">{body(type)?'Personalizada':'Usando padrão da plataforma'}</p></div>{body(type)&&<button onClick={()=>set(type,'')} className="text-xs text-zinc-400 hover:text-orange-300">Restaurar padrão</button>}</div><textarea rows={3} value={body(type)} placeholder={DEFAULT_MESSAGES[type]} onChange={e=>set(type,e.target.value)} className="field mt-4 resize-y"/>{['APPOINTMENT_CREATED','APPOINTMENT_RESCHEDULED'].includes(type)&&<p className="mt-2 text-xs text-zinc-600">Placeholders permitidos: {'{{date}}'} e {'{{time}}'}.</p>}</Card>)}<button onClick={()=>void save()} className="rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-semibold text-black">Salvar mensagens</button><SaveFeedback message={msg}/></div>;
+}
+function Reminders({company,onSaved}:{company:PlatformCompanyDetail;onSaved:(c:PlatformCompanyDetail)=>void}) {
+  const [enabled,setEnabled]=useState(company.reminders.enabled);
+  const [offsets,setOffsets]=useState<ReminderOffsetMinutes[]>(company.reminders.offsets);
+  const [message,setMessage]=useState(company.messageTemplates.find(template=>template.type==='REMINDER')?.body??'');
+  const [msg,setMsg]=useState('');
+  function toggleOffset(offset:ReminderOffsetMinutes){setOffsets(current=>current.includes(offset)?current.filter(value=>value!==offset):[...current,offset]);}
+  async function save(){try{onSaved(await api.saveReminderConfiguration(company.id,{enabled,offsets,message:message||null}));setMsg('Configuração de lembretes salva.');}catch(e){setMsg(e instanceof Error?e.message:'Erro ao salvar.');}}
+  return <div className="grid gap-5 xl:grid-cols-2"><Card><div className="flex items-start justify-between gap-4"><div><h3 className="font-semibold">Lembretes automáticos</h3><p className="mt-1 text-sm leading-6 text-zinc-500">Escolha um ou mais momentos. Apenas lembretes futuros serão programados.</p></div><label className="flex items-center gap-2 text-sm text-zinc-300"><input aria-label="Ativar lembretes" type="checkbox" checked={enabled} onChange={event=>setEnabled(event.target.checked)}/> Ativar</label></div><div className="mt-5 space-y-2">{REMINDER_PRESETS.map(preset=><label key={preset.value} className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-sm ${offsets.includes(preset.value)?'border-orange-500/40 bg-orange-500/8 text-orange-200':'border-white/7 text-zinc-400'}`}><input type="checkbox" checked={offsets.includes(preset.value)} onChange={()=>toggleOffset(preset.value)}/>{preset.label}</label>)}</div></Card>
+    <Card><div className="flex items-center justify-between"><div><h3 className="font-semibold">Mensagem do lembrete</h3><p className="mt-1 text-xs text-zinc-500">{message?'Personalizada':'Usando padrão da plataforma'}</p></div>{message&&<button onClick={()=>setMessage('')} className="text-xs text-zinc-400 hover:text-orange-300">Restaurar padrão</button>}</div><label className="mt-4 block text-sm text-zinc-400">Texto enviado<textarea aria-label="Mensagem do lembrete" rows={6} value={message} placeholder={DEFAULT_MESSAGES.REMINDER} onChange={event=>setMessage(event.target.value)} className="field mt-2 resize-y"/></label><p className="mt-2 text-xs leading-5 text-zinc-600">Placeholders permitidos: {'{{customerName}}'}, {'{{date}}'}, {'{{time}}'} e {'{{companyName}}'}.</p><button onClick={()=>void save()} className="mt-5 rounded-xl bg-orange-500 px-5 py-2.5 text-sm font-semibold text-black">Salvar lembretes</button><SaveFeedback message={msg}/></Card></div>;
 }
 function Pix({company,onSaved}:{company:PlatformCompanyDetail;onSaved:(c:PlatformCompanyDetail)=>void}) {
   const [settings,setSettings]=useState<CompanySettings>(company.settings),[msg,setMsg]=useState('');

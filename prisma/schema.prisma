@@ -49,6 +49,15 @@ enum MessageTemplateType {
   APPOINTMENT_RESCHEDULED
   NO_APPOINTMENTS
   BUSINESS_CLOSED
+  REMINDER
+}
+
+enum ReminderStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  SKIPPED
 }
 
 enum DepositType {
@@ -58,16 +67,17 @@ enum DepositType {
 }
 
 model Company {
-  id               String            @id @default(cuid())
+  id               String                @id @default(cuid())
   name             String
-  status           CompanyStatus     @default(ACTIVE)
-  timezone         String            @default("America/Sao_Paulo")
+  status           CompanyStatus         @default(ACTIVE)
+  timezone         String                @default("America/Sao_Paulo")
   customers        Customer[]
   settings         CompanySettings?
   businessHours    BusinessHour[]
   messageTemplates MessageTemplate[]
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
+  reminders        AppointmentReminder[]
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
 
   @@index([status, createdAt])
 }
@@ -81,14 +91,16 @@ model CompanySettings {
   pixRecipientName String?
   depositType      DepositType @default(NONE)
   depositValue     Int?
+  remindersEnabled Boolean     @default(false)
+  reminderOffsets  Int[]       @default([])
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 }
 
 model BusinessHour {
-  id        String  @id @default(cuid())
+  id        String   @id @default(cuid())
   companyId String
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company   Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
   weekday   Weekday
   startTime String
   endTime   String
@@ -168,4 +180,29 @@ model Appointment {
   @@unique([companyId, date, time])
   @@unique([companyId, id])
   @@index([companyId, customerId, date, time])
+}
+
+model AppointmentReminder {
+  id                  String         @id @default(cuid())
+  companyId           String
+  company             Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  appointmentId       String
+  offsetMinutes       Int
+  scheduledFor        DateTime
+  appointmentDate     String
+  appointmentTime     String
+  status              ReminderStatus @default(PENDING)
+  attempts            Int            @default(0)
+  nextAttemptAt       DateTime
+  processingStartedAt DateTime?
+  dispatchStartedAt   DateTime?
+  sentAt              DateTime?
+  providerMessageId   String?
+  lastError           String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@unique([companyId, appointmentId, offsetMinutes, scheduledFor])
+  @@index([companyId, status, scheduledFor])
+  @@index([companyId, status, nextAttemptAt])
 }

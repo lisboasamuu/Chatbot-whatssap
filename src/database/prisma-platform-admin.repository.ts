@@ -3,6 +3,7 @@ import type { PlatformAdminRepository } from '../platform-admin/platform-admin.r
 import type {
   BusinessHourInput, CompanySettingsInput, CompanyStatus, MessageTemplateInput,
   PlatformCompanyDetail, PlatformCompanySummary,
+  ReminderConfigurationInput, ReminderOffsetMinutes,
 } from '../platform-admin/platform-admin.types.js';
 
 const emptySettings:CompanySettingsInput={pixEnabled:false,pixKey:null,pixRecipientName:null,depositType:'NONE',depositValue:null};
@@ -31,6 +32,10 @@ export class PrismaPlatformAdminRepository implements PlatformAdminRepository {
         pixEnabled:company.settings.pixEnabled,pixKey:company.settings.pixKey,pixRecipientName:company.settings.pixRecipientName,
         depositType:company.settings.depositType as CompanySettingsInput['depositType'],depositValue:company.settings.depositValue,
       } : emptySettings,
+      reminders: company.settings ? {
+        enabled: company.settings.remindersEnabled,
+        offsets: company.settings.reminderOffsets as ReminderOffsetMinutes[],
+      } : { enabled: false, offsets: [] },
     };
   }
 
@@ -71,6 +76,41 @@ export class PrismaPlatformAdminRepository implements PlatformAdminRepository {
   public async upsertSettings(companyId:string,settings:CompanySettingsInput):Promise<boolean>{
     const exists=await this.prisma.company.findUnique({where:{id:companyId},select:{id:true}}); if(!exists)return false;
     await this.prisma.companySettings.upsert({where:{companyId},create:{companyId,...settings},update:settings}); return true;
+  }
+  public async updateReminderConfiguration(
+    companyId: string,
+    configuration: ReminderConfigurationInput,
+  ): Promise<boolean> {
+    const exists = await this.prisma.company.findUnique({ where: { id: companyId }, select: { id: true } });
+    if (!exists) return false;
+
+    await this.prisma.$transaction(async (transaction) => {
+      await transaction.companySettings.upsert({
+        where: { companyId },
+        create: {
+          companyId,
+          remindersEnabled: configuration.enabled,
+          reminderOffsets: configuration.offsets,
+        },
+        update: {
+          remindersEnabled: configuration.enabled,
+          reminderOffsets: configuration.offsets,
+        },
+      });
+
+      if (configuration.message) {
+        await transaction.messageTemplate.upsert({
+          where: { companyId_type: { companyId, type: 'REMINDER' } },
+          create: { companyId, type: 'REMINDER', body: configuration.message },
+          update: { body: configuration.message },
+        });
+      } else {
+        await transaction.messageTemplate.deleteMany({
+          where: { companyId, type: 'REMINDER' },
+        });
+      }
+    });
+    return true;
   }
   public async getTotals(){
     const [totalCompanies,activeCompanies,inactiveCompanies,totalAppointments]=await Promise.all([

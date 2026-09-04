@@ -1,5 +1,42 @@
 # Architecture Decision Log
 
+## ADR-002 — PostgreSQL-backed appointment reminder worker
+
+**Status:** Accepted
+
+**Date:** 2026-09-04
+
+### Context
+
+Phase 7 needs durable, retryable and tenant-isolated reminder scheduling without
+losing state on restart. PostgreSQL is already required by the application, while
+Redis and BullMQ are not part of the current runtime.
+
+### Decision
+
+Persist each reminder in `AppointmentReminder` and run a periodic worker bound to
+the process tenant. Reconciliation creates only temporally valid jobs. Atomic
+claims use PostgreSQL row locking with `FOR UPDATE SKIP LOCKED`; a domain unique
+constraint prevents duplicate jobs. Every dispatch reloads current Company,
+settings, Appointment and recipient state.
+
+### Why
+
+This provides durable scheduling, bounded retry, observability and safe concurrent
+claims using infrastructure that already exists. Redis/BullMQ would add an
+operational dependency without being necessary for the current one-process-per-
+tenant architecture.
+
+### Consequences
+
+- The polling timer is not authoritative; all lifecycle state is stored in PostgreSQL.
+- Cancellation can keep reminder history because `appointmentId` is a historical
+  reference rather than a cascading foreign key.
+- An interrupted dispatch with uncertain external outcome is not resent, because
+  the current WhatsApp provider has no external idempotency key.
+- A future move to a dedicated queue can retain `AppointmentReminder` as the audit
+  and idempotency ledger.
+
 ## ADR-001 — Separate administrative HTTP and WhatsApp adapters
 
 **Status:** Accepted

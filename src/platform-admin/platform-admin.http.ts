@@ -29,7 +29,7 @@ async function readJson(request:IncomingMessage):Promise<Record<string,unknown>>
   } catch { throw new PlatformValidationError('JSON inválido.'); }
 }
 function companyRoute(pathname:string):{id:string;section:string|null}|null{
-  const m=/^\/api\/platform\/companies\/([^/]+)(?:\/(business-hours|messages|settings))?$/.exec(pathname);
+  const m=/^\/api\/platform\/companies\/([^/]+)(?:\/(business-hours|messages|settings|reminders))?$/.exec(pathname);
   if(!m)return null;
   try{return {id:decodeURIComponent(m[1]!),section:m[2]??null};}catch{return null;}
 }
@@ -79,6 +79,9 @@ export async function handlePlatformRequest(
     }
     if(route.section==='settings' && request.method==='PUT'){
       const body=await readJson(request); sendJson(response,200,{company:await deps.service.updateSettings(route.id,body)});return true;
+    }
+    if(route.section==='reminders' && request.method==='PUT'){
+      const body=await readJson(request); sendJson(response,200,{company:await deps.service.updateReminderConfiguration(route.id,body)});return true;
     }
   }
 

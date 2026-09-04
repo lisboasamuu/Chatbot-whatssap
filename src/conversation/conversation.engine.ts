@@ -8,6 +8,11 @@ import {
   type Appointment,
 } from '../appointments/appointment.types.js';
 import type { ConversationStore } from './conversation.store.js';
+import {
+  DEFAULT_MESSAGE_TEMPLATES,
+  renderMessageTemplate,
+  type MessageTemplateType,
+} from '../message-templates/message-template.js';
 import type {
   ConversationContext,
   ConversationInput,
@@ -19,18 +24,7 @@ import type {
 export const FALLBACK_REPLY = 'Desculpe, não entendi.';
 
 //Atualizando a default reply para suportar mensagem mais profissional ao atendimento
-export const DEFAULT_REPLY = [
-  'Olá! 👋 Bem-vindo.',
-  '',
-  'Como posso ajudar?',
-  '',
-  '• Para agendar um horário, digite "agendar".',
-  '• Para consultar seus horários, digite "meus agendamentos".',
-  '• Para remarcar um horário, digite "remarcar agendamento".',
-  '• Para cancelar um horário, digite "cancelar agendamento".',
-  '',
-  'Durante uma operação, digite "sair" para voltar ao menu.',
-].join('\n');
+export const DEFAULT_REPLY = DEFAULT_MESSAGE_TEMPLATES.WELCOME;
 
 const FLOW_ABORTED_REPLY = 'Operação encerrada.';
 const FLOW_RECOVERY_REPLY =
@@ -51,18 +45,9 @@ export const INACTIVITY_REPLY =
   'Atendimento encerrado automaticamente por inatividade. Quando precisar, é só enviar uma nova mensagem. Até logo! 👋';
 
 export interface ConversationMessageTemplateProvider {
-  getMessageTemplate(type: 'WELCOME' | 'APPOINTMENT_CREATED' | 'APPOINTMENT_CANCELLED' | 'APPOINTMENT_RESCHEDULED' | 'NO_APPOINTMENTS' | 'BUSINESS_CLOSED'): Promise<string | null>;
+  getMessageTemplate(type: Exclude<MessageTemplateType, 'REMINDER'>): Promise<string | null>;
   isActive?(): Promise<boolean>;
 }
-
-const TEMPLATE_DEFAULTS = {
-  WELCOME: DEFAULT_REPLY,
-  APPOINTMENT_CREATED: 'Agendamento confirmado para {{date}} às {{time}}. Obrigado pela preferência!',
-  APPOINTMENT_CANCELLED: 'Agendamento cancelado com sucesso. Obrigado pela preferência!',
-  APPOINTMENT_RESCHEDULED: 'Agendamento remarcado para {{date}} às {{time}}. Obrigado pela preferência!',
-  NO_APPOINTMENTS: 'Você não possui agendamentos.',
-  BUSINESS_CLOSED: 'Esse horário está fora do horário de atendimento. Envie outro horário no formato HH:mm.',
-} as const;
 
 const ACTIVE_COMMANDS = new Set([
   'agendar',
@@ -229,15 +214,15 @@ export class ConversationEngine {
   ) {}
 
   private async template(
-    type: keyof typeof TEMPLATE_DEFAULTS,
+    type: Exclude<MessageTemplateType, 'REMINDER'>,
     variables: Record<string, string> = {},
   ): Promise<string> {
     const custom = await this.messageTemplates?.getMessageTemplate(type);
-    let body = custom ?? TEMPLATE_DEFAULTS[type];
-    for (const [key, value] of Object.entries(variables)) {
-      body = body.replaceAll(`{{${key}}}`, value);
-    }
-    return body;
+    return renderMessageTemplate(
+      type,
+      custom ?? DEFAULT_MESSAGE_TEMPLATES[type],
+      variables,
+    );
   }
 
   public async handle(input: ConversationInput): Promise<ConversationResult> {

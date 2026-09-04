@@ -1,3 +1,35 @@
+# Fase 7 — Lembretes automáticos de agendamento
+
+Cada empresa pode ativar lembretes e selecionar exclusivamente os presets de 24h,
+12h, 4h, 1h e 30 minutos no Platform Admin. A mensagem usa o `MessageTemplate`
+existente com tipo `REMINDER`, fallback da plataforma e os placeholders permitidos
+`{{customerName}}`, `{{date}}`, `{{time}}` e `{{companyName}}`.
+
+O scheduling usa PostgreSQL como fonte de verdade. Um worker periódico por processo
+e por tenant reconcilia os agendamentos, persiste `AppointmentReminder` e reivindica
+jobs vencidos com `FOR UPDATE SKIP LOCKED`. O timer apenas acorda o worker; restart ou
+deploy não apagam a programação. A constraint composta por empresa, agendamento,
+offset e instante programado impede criação duplicada.
+
+Antes de enviar, o worker relê empresa, configuração, template, agendamento,
+destinatário e disponibilidade do WhatsApp. Cancelamentos, remarcações, empresa
+inativa e offsets desabilitados resultam em `SKIPPED`. Falhas explicitamente
+retornadas pelo provider têm no máximo três tentativas, com esperas de 1 e 5
+minutos; depois disso ficam `FAILED` com erro operacional persistido.
+
+`scheduledFor` é persistido em UTC. O instante é calculado a partir dos campos
+locais `Appointment.date` + `Appointment.time` usando o timezone IANA da Company.
+O worker e o provider são vinculados ao mesmo `companyId`, preservando o modelo da
+Fase 5 de uma empresa operacional por processo.
+
+Se o processo parar depois de registrar o início do dispatch, mas antes de salvar a
+confirmação do WhatsApp, o resultado é tratado como incerto e finalizado como
+`FAILED`, sem reenvio automático. Essa escolha conservadora evita mensagens
+duplicadas porque `whatsapp-web.js` não oferece uma chave idempotente externa.
+
+Esta fase não implementa pagamentos, IA, login empresarial, QR administrativo ou
+qualquer item de Company Access / Production Readiness da Fase 7.5.
+
 # Fase 5.5 — Platform Admin & Company Configuration
 
 O Platform Admin privado está disponível em `/platform`. As operações cross-tenant

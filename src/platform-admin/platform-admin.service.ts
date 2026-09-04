@@ -1,17 +1,19 @@
+import { findUnsupportedPlaceholder } from '../message-templates/message-template.js';
 import type { PlatformAdminRepository } from './platform-admin.repository.js';
 import type {
   BusinessHourInput, CompanySettingsInput, CompanyStatus, DepositType,
-  MessageTemplateInput, MessageTemplateType, PlatformCompanyDetail, Weekday,
+  MessageTemplateInput, MessageTemplateType, PlatformCompanyDetail,
+  ReminderConfigurationInput, ReminderOffsetMinutes, Weekday,
 } from './platform-admin.types.js';
 
 const WEEKDAYS = new Set<Weekday>(['MONDAY','TUESDAY','WEDNESDAY','THURSDAY','FRIDAY','SATURDAY','SUNDAY']);
 const TEMPLATE_TYPES = new Set<MessageTemplateType>([
-  'WELCOME','APPOINTMENT_CREATED','APPOINTMENT_CANCELLED','APPOINTMENT_RESCHEDULED','NO_APPOINTMENTS','BUSINESS_CLOSED',
+  'WELCOME','APPOINTMENT_CREATED','APPOINTMENT_CANCELLED','APPOINTMENT_RESCHEDULED','NO_APPOINTMENTS','BUSINESS_CLOSED','REMINDER',
 ]);
 const STATUS = new Set<CompanyStatus>(['ACTIVE','INACTIVE']);
 const DEPOSIT_TYPES = new Set<DepositType>(['NONE','FIXED','PERCENTAGE']);
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
-const ALLOWED_PLACEHOLDERS = new Set(['date', 'time']);
+const REMINDER_OFFSETS = new Set<ReminderOffsetMinutes>([30, 60, 240, 720, 1440]);
 
 export class PlatformValidationError extends Error {}
 export class PlatformNotFoundError extends Error {}
@@ -25,12 +27,11 @@ function cleanName(value: unknown): string {
   if (name.length < 2 || name.length > 120) throw new PlatformValidationError('Nome da empresa deve ter entre 2 e 120 caracteres.');
   return name;
 }
-function validateTemplateBody(body: string): string {
+function validateTemplateBody(type: MessageTemplateType, body: string): string {
   const normalized = body.trim();
   if (!normalized || normalized.length > 2000) throw new PlatformValidationError('Mensagem deve ter entre 1 e 2000 caracteres.');
-  for (const match of normalized.matchAll(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g)) {
-    if (!ALLOWED_PLACEHOLDERS.has(match[1])) throw new PlatformValidationError(`Placeholder não permitido: ${match[1]}.`);
-  }
+  const unsupported = findUnsupportedPlaceholder(type, normalized);
+  if (unsupported) throw new PlatformValidationError(`Placeholder não permitido: ${unsupported}.`);
   return normalized;
 }
 
@@ -88,7 +89,8 @@ export class PlatformAdminService {
       if (!item || typeof item !== 'object') throw new PlatformValidationError('Mensagem inválida.');
       const r=item as Record<string,unknown>;
       if (typeof r.type !== 'string' || !TEMPLATE_TYPES.has(r.type as MessageTemplateType) || typeof r.body !== 'string' || seen.has(r.type)) throw new PlatformValidationError('Tipo de mensagem inválido ou duplicado.');
-      seen.add(r.type); return { type:r.type as MessageTemplateType, body:validateTemplateBody(r.body) };
+      const type = r.type as MessageTemplateType;
+      seen.add(type); return { type, body:validateTemplateBody(type, r.body) };
     });
     if (!(await this.repository.replaceMessageTemplates(id, templates))) throw new PlatformNotFoundError('Empresa não encontrada.');
     return this.getCompany(id);
@@ -117,6 +119,50 @@ export class PlatformAdminService {
     };
     if (settings.pixEnabled && (!settings.pixKey || !settings.pixRecipientName)) throw new PlatformValidationError('Chave Pix e favorecido são obrigatórios quando Pix está habilitado.');
     if (!(await this.repository.upsertSettings(id,settings))) throw new PlatformNotFoundError('Empresa não encontrada.');
+    return this.getCompany(id);
+  }
+
+  public async updateReminderConfiguration(
+    id: string,
+    raw: unknown,
+  ): Promise<PlatformCompanyDetail> {
+    if (!raw || typeof raw !== 'object') {
+      throw new PlatformValidationError('Configuração de lembretes inválida.');
+    }
+
+    const record = raw as Record<string, unknown>;
+    if (typeof record.enabled !== 'boolean' || !Array.isArray(record.offsets)) {
+      throw new PlatformValidationError('Informe se os lembretes estão ativos e selecione os intervalos permitidos.');
+    }
+
+    const offsets: ReminderOffsetMinutes[] = [];
+    for (const value of record.offsets) {
+      if (!Number.isInteger(value) || !REMINDER_OFFSETS.has(value as ReminderOffsetMinutes)) {
+        throw new PlatformValidationError('Intervalo de lembrete inválido.');
+      }
+      const offset = value as ReminderOffsetMinutes;
+      if (!offsets.includes(offset)) offsets.push(offset);
+    }
+    offsets.sort((left, right) => right - left);
+
+    let message: string | null = null;
+    if (record.message !== null && record.message !== undefined) {
+      if (typeof record.message !== 'string') {
+        throw new PlatformValidationError('Mensagem de lembrete inválida.');
+      }
+      if (record.message.trim()) {
+        message = validateTemplateBody('REMINDER', record.message);
+      }
+    }
+
+    const configuration: ReminderConfigurationInput = {
+      enabled: record.enabled,
+      offsets,
+      message,
+    };
+    if (!(await this.repository.updateReminderConfiguration(id, configuration))) {
+      throw new PlatformNotFoundError('Empresa não encontrada.');
+    }
     return this.getCompany(id);
   }
 }

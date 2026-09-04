@@ -72,15 +72,33 @@ export class PlatformAdminAuth {
     return true;
   }
 
-  public isSameOrigin(request:IncomingMessage):boolean {
-    const origin=request.headers.origin;
-    if (!origin) return true; // non-browser clients still require the session cookie
-    const host=request.headers.host;
-    if (!host) return false;
-    try {
-      const parsed=new URL(origin);
-      const expectedProtocol=this.production ? 'https:' : parsed.protocol;
-      return parsed.host===host && parsed.protocol===expectedProtocol;
-    } catch { return false; }
-  }
+  public isSameOrigin(request: IncomingMessage): boolean {
+	const origin = request.headers.origin;
+
+	if (!origin) {
+		return true;
+	}
+
+	try {
+		const parsed = new URL(origin);
+
+		if (!this.production) {
+		return (
+			parsed.protocol === 'http:' &&
+			(parsed.hostname === 'localhost' ||
+			parsed.hostname === '127.0.0.1')
+		);
+		}
+
+		const host = request.headers.host;
+
+		if (!host) {
+		return false;
+		}
+
+		return parsed.protocol === 'https:' && parsed.host === host;
+	} catch {
+		return false;
+	}
+}
 }

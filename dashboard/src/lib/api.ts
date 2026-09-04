@@ -11,6 +11,7 @@ import type {
   BusinessHour,
   MessageTemplate,
   CompanySettings,
+  ReminderOffsetMinutes,
 } from '../types';
 
 interface ApiErrorBody {
@@ -65,6 +66,8 @@ export const api = {
     request<{company:PlatformCompanyDetail}>(`/api/platform/companies/${encodeURIComponent(id)}/messages`,{method:'PUT',body:JSON.stringify({templates})}).then(({company})=>company),
   saveCompanySettings: (id:string,settings:CompanySettings): Promise<PlatformCompanyDetail> =>
     request<{company:PlatformCompanyDetail}>(`/api/platform/companies/${encodeURIComponent(id)}/settings`,{method:'PUT',body:JSON.stringify(settings)}).then(({company})=>company),
+  saveReminderConfiguration: (id:string,input:{enabled:boolean;offsets:ReminderOffsetMinutes[];message:string|null}): Promise<PlatformCompanyDetail> =>
+    request<{company:PlatformCompanyDetail}>(`/api/platform/companies/${encodeURIComponent(id)}/reminders`,{method:'PUT',body:JSON.stringify(input)}).then(({company})=>company),
   getCurrentCompany: (): Promise<Company> =>
     request<{ company: Company }>('/api/company/current').then(({ company }) => company),
   getSummary: (): Promise<DashboardSummary> =>

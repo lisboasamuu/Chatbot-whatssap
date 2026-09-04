@@ -16,6 +16,7 @@ import type {
   MessageTemplateInput,
   PlatformCompanyDetail,
   PlatformCompanySummary,
+  ReminderConfigurationInput,
 } from './platform-admin.types.js';
 
 class EmptyAdminRepository implements AdminRepository {
@@ -34,6 +35,7 @@ class PlatformRepository implements PlatformAdminRepository {
     createdAt:new Date('2026-08-30T00:00:00Z'),updatedAt:new Date('2026-08-30T00:00:00Z'),
     customerCount:0,appointmentCount:0,businessHours:[],messageTemplates:[],
     settings:{pixEnabled:false,pixKey:null,pixRecipientName:null,depositType:'NONE',depositValue:null},
+    reminders:{enabled:false,offsets:[]},
   };
   async listCompanies():Promise<PlatformCompanySummary[]>{ return [this.company]; }
   async getCompany(id:string){ return id===this.company.id?this.company:null; }
@@ -42,6 +44,7 @@ class PlatformRepository implements PlatformAdminRepository {
   async replaceBusinessHours(id:string,_hours:BusinessHourInput[]){ return id===this.company.id; }
   async replaceMessageTemplates(id:string,_templates:MessageTemplateInput[]){ return id===this.company.id; }
   async upsertSettings(id:string,_settings:CompanySettingsInput){ return id===this.company.id; }
+  async updateReminderConfiguration(id:string,_configuration:ReminderConfigurationInput){ return id===this.company.id; }
   async getTotals(){ return {totalCompanies:1,activeCompanies:1,inactiveCompanies:0,totalAppointments:0}; }
 }
 
@@ -99,5 +102,26 @@ test('invalid platform password is rejected without leaking details',async()=>{
     const body=await response.text();
     assert.equal(response.status,401);
     assert.doesNotMatch(body,/this-is-a-strong-admin-password/);
+  });
+});
+
+test('authorized platform admin can configure reminder presets but not arbitrary minutes',async()=>{
+  await withPlatformServer(async baseUrl=>{
+    const login=await fetch(`${baseUrl}/api/platform/auth/login`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({password:'this-is-a-strong-admin-password'}),
+    });
+    const cookie=login.headers.get('set-cookie')?.split(';')[0];
+    assert.ok(cookie);
+    const accepted=await fetch(`${baseUrl}/api/platform/companies/company-a/reminders`,{
+      method:'PUT',headers:{'Content-Type':'application/json',Cookie:cookie},
+      body:JSON.stringify({enabled:true,offsets:[1440,60],message:'Oi {{customerName}}'}),
+    });
+    assert.equal(accepted.status,200);
+    const rejected=await fetch(`${baseUrl}/api/platform/companies/company-a/reminders`,{
+      method:'PUT',headers:{'Content-Type':'application/json',Cookie:cookie},
+      body:JSON.stringify({enabled:true,offsets:[15],message:null}),
+    });
+    assert.equal(rejected.status,400);
   });
 });
