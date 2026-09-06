@@ -445,6 +445,8 @@ Frontend em desenvolvimento:
 http://localhost:5173
 ```
 
+Precisa fazer cada um num terminal para poder rodar os dois ao mesmo tempo.
+
 ---
 
 ## Validação
