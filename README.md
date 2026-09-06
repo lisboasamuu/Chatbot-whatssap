@@ -253,9 +253,9 @@ Configurações incluem:
 - dados Pix;
 - antecipação.
 
-A interface usa a identidade visual **Código NS** e foi ajustada para mobile, tablet e desktop.
+A interface usa a identidade visual **Código NS** e foi ajustada para mobile, tablet e desktop (Com responsividade).
 
-No mobile, a navegação principal utiliza drawer/menu.
+No mobile, a navegação principal utiliza drawer/menu de hamburguer.
 
 ---
 
@@ -356,7 +356,7 @@ Dashboard:
 npm --prefix dashboard ci
 ```
 
-Durante desenvolvimento também pode ser usado:
+Durante desenvolvimento também pode usar:
 
 ```bash
 npm --prefix dashboard install
@@ -372,7 +372,7 @@ Variáveis importantes da arquitetura atual:
 
 ```env
 DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/chatbot?schema=public"
-PLATFORM_ADMIN_PASSWORD="..."
+PLATFORM_ADMIN_PASSWORD="..." (senha para entrar na plataforma de adm)
 SESSION_SECRET="..."
 APP_ORIGIN="http://localhost:5173"
 ```
@@ -415,7 +415,7 @@ npx prisma migrate dev
 
 ### Regra importante
 
-**Nunca use `prisma migrate reset` como solução para divergência de migrations neste projeto.**
+**Nunca use `prisma migrate reset` como solução para divergência de migrations neste projeto!!**
 
 ---
 
@@ -497,7 +497,7 @@ Branch principal:
 main
 ```
 
-Antes de alterações importantes:
+Antes de alterações importantes use:
 
 ```bash
 git branch --show-current
@@ -505,7 +505,7 @@ git status
 git log --oneline --decorate -10
 ```
 
-Evite operações destrutivas como:
+Evite operações muito destrutivas tipo:
 
 ```text
 git reset --hard
@@ -534,7 +534,7 @@ git restore .
 
 ## Identidade Código NS
 
-Paleta principal:
+Paleta de cores escolhida:
 
 ```text
 #0F195C  brand-900
@@ -581,4 +581,4 @@ Configuração operacional
 Interface responsiva
 ```
 
-A próxima grande etapa é **calibrar, proteger, hospedar e preparar a base existente para produção**.
+A próxima grande etapa é **calibrar, proteger, hospedar e preparar a base existente para produção**. E também incluir gateway de pagamentos, o que é um tema para próximos estudos e evolução.
