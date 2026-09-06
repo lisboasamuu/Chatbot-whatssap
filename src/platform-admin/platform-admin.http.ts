@@ -29,13 +29,13 @@ async function readJson(request:IncomingMessage):Promise<Record<string,unknown>>
   } catch { throw new PlatformValidationError('JSON inválido.'); }
 }
 function companyRoute(pathname:string):{id:string;section:string|null}|null{
-  const m=/^\/api\/platform\/companies\/([^/]+)(?:\/(business-hours|messages|settings|reminders))?$/.exec(pathname);
+  const m=/^\/api\/platform\/companies\/([^/]+)(?:\/(business-hours|messages|settings|reminders|access))?$/.exec(pathname);
   if(!m)return null;
   try{return {id:decodeURIComponent(m[1]!),section:m[2]??null};}catch{return null;}
 }
 function mutation(method:string|undefined):boolean{return method==='POST'||method==='PUT'||method==='PATCH'||method==='DELETE';}
 
-export interface PlatformHttpDependencies { service:PlatformAdminService; auth:PlatformAdminAuth; }
+export interface PlatformHttpDependencies { service:PlatformAdminService; auth:PlatformAdminAuth; refreshCompanyRuntimes?:()=>Promise<void>; }
 
 export async function handlePlatformRequest(
   request:IncomingMessage,response:ServerResponse,deps:PlatformHttpDependencies,
@@ -69,7 +69,7 @@ export async function handlePlatformRequest(
   if(route){
     if(!route.section && request.method==='GET'){sendJson(response,200,{company:await deps.service.getCompany(route.id)});return true;}
     if(!route.section && request.method==='PATCH'){
-      const body=await readJson(request); sendJson(response,200,{company:await deps.service.updateCompany(route.id,body)});return true;
+      const body=await readJson(request); const company=await deps.service.updateCompany(route.id,body); await deps.refreshCompanyRuntimes?.(); sendJson(response,200,{company});return true;
     }
     if(route.section==='business-hours' && request.method==='PUT'){
       const body=await readJson(request); sendJson(response,200,{company:await deps.service.replaceBusinessHours(route.id,body.hours)});return true;
@@ -82,6 +82,9 @@ export async function handlePlatformRequest(
     }
     if(route.section==='reminders' && request.method==='PUT'){
       const body=await readJson(request); sendJson(response,200,{company:await deps.service.updateReminderConfiguration(route.id,body)});return true;
+    }
+    if(route.section==='access' && request.method==='PUT'){
+      const body=await readJson(request); sendJson(response,200,{company:await deps.service.updateCompanyAccess(route.id,body)});return true;
     }
   }
 

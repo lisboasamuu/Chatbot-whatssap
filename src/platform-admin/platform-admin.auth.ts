@@ -21,20 +21,22 @@ function parseCookies(request: IncomingMessage): Record<string,string> {
   }
   return result;
 }
-function clientKey(request: IncomingMessage): string {
-  return request.socket.remoteAddress ?? 'unknown';
-}
 
 export class PlatformAdminAuth {
   private readonly sessions = new Map<string, Session>();
   private readonly attempts = new Map<string, Attempts>();
 
-  public constructor(private readonly password: string, private readonly production: boolean) {
+  public constructor(
+    private readonly password: string,
+    private readonly production: boolean,
+    private readonly appOrigin?: string,
+    private readonly trustProxy = false,
+  ) {
     if (password.length < 16) throw new Error('PLATFORM_ADMIN_PASSWORD must have at least 16 characters.');
   }
 
   public verifyPassword(candidate: string, request: IncomingMessage): boolean {
-    const key=clientKey(request), now=Date.now(), current=this.attempts.get(key);
+    const key=this.clientKey(request), now=Date.now(), current=this.attempts.get(key);
     const attempt=!current || now-current.windowStartedAt >= LOGIN_WINDOW_MS
       ? {count:0,windowStartedAt:now} : current;
     if (attempt.count >= MAX_LOGIN_ATTEMPTS) return false;
@@ -73,32 +75,25 @@ export class PlatformAdminAuth {
   }
 
   public isSameOrigin(request: IncomingMessage): boolean {
-	const origin = request.headers.origin;
+    const origin = request.headers.origin;
+    if (!origin) return true;
+    if (this.appOrigin) {
+      try { return new URL(origin).origin === new URL(this.appOrigin).origin; } catch { return false; }
+    }
+    try {
+      const parsed = new URL(origin);
+      if (!this.production) return parsed.protocol === 'http:' && (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1');
+      const host = request.headers.host;
+      return Boolean(host) && parsed.protocol === 'https:' && parsed.host === host;
+    } catch { return false; }
+  }
 
-	if (!origin) {
-		return true;
-	}
-
-	try {
-		const parsed = new URL(origin);
-
-		if (!this.production) {
-		return (
-			parsed.protocol === 'http:' &&
-			(parsed.hostname === 'localhost' ||
-			parsed.hostname === '127.0.0.1')
-		);
-		}
-
-		const host = request.headers.host;
-
-		if (!host) {
-		return false;
-		}
-
-		return parsed.protocol === 'https:' && parsed.host === host;
-	} catch {
-		return false;
-	}
-}
+  private clientKey(request: IncomingMessage): string {
+    if (this.trustProxy) {
+      const forwarded = request.headers['x-forwarded-for'];
+      const first = Array.isArray(forwarded) ? forwarded[0] : forwarded?.split(',')[0];
+      if (first?.trim()) return first.trim();
+    }
+    return request.socket.remoteAddress ?? 'unknown';
+  }
 }

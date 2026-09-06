@@ -40,28 +40,27 @@ export function CustomerDetailPage(): ReactNode {
 
   return (
     <section className="space-y-8">
-      <div className="space-y-2">
-        <Link to="/customers" className="text-sm text-cyan-400 hover:underline">
-          ← Voltar para clientes
-        </Link>
-        <h2 className="text-3xl font-semibold tracking-tight">
-          {customer.name ?? customer.externalId}
-        </h2>
-        <div className="grid gap-1 text-sm text-slate-400">
-          {customer.name ? <p>WhatsApp: {customer.externalId}</p> : null}
-          <p>ID: <span className="font-mono">{customer.id}</span></p>
-          <p>Criado em: {new Date(customer.createdAt).toLocaleString('pt-BR')}</p>
-          <p>Atualizado em: {new Date(customer.updatedAt).toLocaleString('pt-BR')}</p>
+      <div className="space-y-3">
+        <Link to="/customers" className="brand-link text-sm">← Voltar para clientes</Link>
+        <div>
+          <p className="brand-eyebrow">Perfil do cliente</p>
+          <h2 className="brand-page-title">{customer.name ?? customer.externalId}</h2>
+        </div>
+        <div className="grid gap-2 rounded-2xl border border-brand-100 bg-white p-4 text-sm text-slate-500 shadow-sm sm:grid-cols-2">
+          {customer.name ? <p>WhatsApp: <span className="font-medium text-slate-700">{customer.externalId}</span></p> : null}
+          <p>ID: <span className="break-all font-mono text-xs text-slate-700">{customer.id}</span></p>
+          <p>Criado em: <span className="text-slate-700">{new Date(customer.createdAt).toLocaleString('pt-BR')}</span></p>
+          <p>Atualizado em: <span className="text-slate-700">{new Date(customer.updatedAt).toLocaleString('pt-BR')}</span></p>
         </div>
       </div>
 
       <div className="space-y-3">
-        <h3 className="text-lg font-semibold">Agendamentos</h3>
+        <h3 className="text-lg font-semibold text-brand-900">Agendamentos</h3>
         <AppointmentTable appointments={customer.appointments} />
       </div>
 
       <div className="space-y-3">
-        <h3 className="text-lg font-semibold">Histórico da conversa</h3>
+        <h3 className="text-lg font-semibold text-brand-900">Histórico da conversa</h3>
         {!conversation || conversation.messages.length === 0 ? (
           <EmptyState message="Nenhuma mensagem registrada para este cliente." />
         ) : (
@@ -69,27 +68,25 @@ export function CustomerDetailPage(): ReactNode {
             {conversation.messages.map((message) => (
               <article
                 key={message.id}
-                className={`max-w-3xl rounded-xl border p-4 ${
+                className={`w-full max-w-3xl overflow-hidden rounded-2xl border p-4 shadow-sm ${
                   message.direction === 'INBOUND'
-                    ? 'mr-auto border-slate-700 bg-slate-900'
-                    : 'ml-auto border-cyan-900 bg-cyan-950/50'
+                    ? 'mr-auto border-slate-200 bg-white'
+                    : 'ml-auto border-brand-100 bg-brand-100/70'
                 }`}
               >
                 <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                   <span
-                    className={`rounded-full px-2 py-1 text-xs font-semibold ${
+                    className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
                       message.direction === 'INBOUND'
-                        ? 'bg-slate-700 text-slate-200'
-                        : 'bg-cyan-400 text-slate-950'
+                        ? 'bg-slate-100 text-slate-700'
+                        : 'bg-brand-700 text-white'
                     }`}
                   >
                     {message.direction}
                   </span>
-                  <time className="text-xs text-slate-500">
-                    {new Date(message.createdAt).toLocaleString('pt-BR')}
-                  </time>
+                  <time className="text-xs text-slate-400">{new Date(message.createdAt).toLocaleString('pt-BR')}</time>
                 </div>
-                <p className="whitespace-pre-wrap text-sm leading-relaxed">{message.body}</p>
+                <p className="break-words whitespace-pre-wrap text-sm leading-relaxed text-slate-700">{message.body}</p>
               </article>
             ))}
           </div>

@@ -19,6 +19,7 @@ export class PrismaPlatformAdminRepository implements PlatformAdminRepository {
         businessHours:{orderBy:[{weekday:'asc'},{startTime:'asc'}]},
         messageTemplates:{orderBy:{type:'asc'}},
         settings:true,
+        credential:{select:{email:true}},
       },
     });
     if (!company) return null;
@@ -32,6 +33,8 @@ export class PrismaPlatformAdminRepository implements PlatformAdminRepository {
         pixEnabled:company.settings.pixEnabled,pixKey:company.settings.pixKey,pixRecipientName:company.settings.pixRecipientName,
         depositType:company.settings.depositType as CompanySettingsInput['depositType'],depositValue:company.settings.depositValue,
       } : emptySettings,
+      whatsappEnabled: company.settings?.whatsappEnabled ?? true,
+      access: { configured: Boolean(company.credential), email: company.credential?.email ?? null },
       reminders: company.settings ? {
         enabled: company.settings.remindersEnabled,
         offsets: company.settings.reminderOffsets as ReminderOffsetMinutes[],
@@ -109,6 +112,19 @@ export class PrismaPlatformAdminRepository implements PlatformAdminRepository {
           where: { companyId, type: 'REMINDER' },
         });
       }
+    });
+    return true;
+  }
+  public async upsertCompanyAccess(companyId:string,email:string,passwordHash:string|null):Promise<boolean>{
+    const exists=await this.prisma.company.findUnique({where:{id:companyId},select:{id:true}});
+    if(!exists)return false;
+    const current=await this.prisma.companyCredential.findUnique({where:{companyId},select:{id:true}});
+    if(!current && !passwordHash)return false;
+    await this.prisma.$transaction(async tx=>{
+      const credential=current
+        ? await tx.companyCredential.update({where:{companyId},data:{email,...(passwordHash?{passwordHash}:{})},select:{id:true}})
+        : await tx.companyCredential.create({data:{companyId,email,passwordHash:passwordHash!},select:{id:true}});
+      await tx.companySession.deleteMany({where:{credentialId:credential.id}});
     });
     return true;
   }

@@ -15,5 +15,6 @@ export interface PlatformAdminRepository {
     companyId: string,
     configuration: ReminderConfigurationInput,
   ): Promise<boolean>;
+  upsertCompanyAccess(companyId: string, email: string, passwordHash: string | null): Promise<boolean>;
   getTotals(): Promise<{ totalCompanies: number; activeCompanies: number; inactiveCompanies: number; totalAppointments: number }>;
 }

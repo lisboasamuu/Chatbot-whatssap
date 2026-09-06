@@ -10,7 +10,7 @@ import type {
 class FakeRepository implements PlatformAdminRepository {
   public companies = new Map<string,PlatformCompanyDetail>();
   public constructor() {
-    this.companies.set('a',{id:'a',name:'Empresa A',status:'ACTIVE',timezone:'America/Sao_Paulo',createdAt:new Date(),updatedAt:new Date(),customerCount:1,appointmentCount:1,businessHours:[],messageTemplates:[],settings:{pixEnabled:false,pixKey:null,pixRecipientName:null,depositType:'NONE',depositValue:null},reminders:{enabled:false,offsets:[]}});
+    this.companies.set('a',{id:'a',name:'Empresa A',status:'ACTIVE',timezone:'America/Sao_Paulo',createdAt:new Date(),updatedAt:new Date(),customerCount:1,appointmentCount:1,businessHours:[],messageTemplates:[],settings:{pixEnabled:false,pixKey:null,pixRecipientName:null,depositType:'NONE',depositValue:null},reminders:{enabled:false,offsets:[]},whatsappEnabled:true,access:{configured:false,email:null}});
   }
   async listCompanies():Promise<PlatformCompanySummary[]>{return [...this.companies.values()];}
   async getCompany(id:string){return this.companies.get(id)??null;}
@@ -20,6 +20,7 @@ class FakeRepository implements PlatformAdminRepository {
   async replaceMessageTemplates(id:string,templates:MessageTemplateInput[]){const c=this.companies.get(id);if(!c)return false;c.messageTemplates=templates;return true;}
   async upsertSettings(id:string,settings:CompanySettingsInput){const c=this.companies.get(id);if(!c)return false;c.settings=settings;return true;}
   async updateReminderConfiguration(id:string,configuration:ReminderConfigurationInput){const c=this.companies.get(id);if(!c)return false;c.reminders={enabled:configuration.enabled,offsets:configuration.offsets};c.messageTemplates=[...c.messageTemplates.filter(template=>template.type!=='REMINDER'),...(configuration.message?[{type:'REMINDER' as const,body:configuration.message}]:[])];return true;}
+  async upsertCompanyAccess(id:string,email:string,_passwordHash:string|null){const c=this.companies.get(id);if(!c)return false;c.access={configured:true,email};return true;}
   async getTotals(){return {totalCompanies:this.companies.size,activeCompanies:[...this.companies.values()].filter(c=>c.status==='ACTIVE').length,inactiveCompanies:[...this.companies.values()].filter(c=>c.status==='INACTIVE').length,totalAppointments:1};}
 }
 test('platform admin creates and deactivates companies without deleting history',async()=>{

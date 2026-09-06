@@ -48,21 +48,78 @@ function isValidDateParts(year: number, month: number, day: number): boolean {
   );
 }
 
-export function parseDateInput(input: string): string | null {
-  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(input);
-  if (!match) {
+function addDaysToNormalizedDate(date: string, days: number): string | null {
+  if (!isNormalizedDate(date)) {
     return null;
   }
 
-  const day = Number(match[1]);
-  const month = Number(match[2]);
-  const year = Number(match[3]);
+  const [year, month, day] = date.split('-').map(Number);
+  const result = new Date(0);
+  result.setUTCFullYear(year, month - 1, day);
+  result.setUTCHours(0, 0, 0, 0);
+  result.setUTCDate(result.getUTCDate() + days);
 
-  if (!isValidDateParts(year, month, day)) {
+  const resultYear = String(result.getUTCFullYear()).padStart(4, '0');
+  const resultMonth = String(result.getUTCMonth() + 1).padStart(2, '0');
+  const resultDay = String(result.getUTCDate()).padStart(2, '0');
+
+  return `${resultYear}-${resultMonth}-${resultDay}`;
+}
+
+export function parseDateInput(
+  input: string,
+  referenceDate?: string,
+): string | null {
+  const normalizedInput = input
+    .trim()
+    .toLocaleLowerCase('pt-BR')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(normalizedInput);
+
+  if (match) {
+    const day = Number(match[1]);
+    const month = Number(match[2]);
+    const year = Number(match[3]);
+
+    if (!isValidDateParts(year, month, day)) {
+      return null;
+    }
+
+    return `${match[3]}-${match[2]}-${match[1]}`;
+  }
+
+  if (!referenceDate || !isNormalizedDate(referenceDate)) {
     return null;
   }
 
-  return `${match[3]}-${match[2]}-${match[1]}`;
+  switch (normalizedInput) {
+    case 'hoje':
+      return referenceDate;
+    case 'amanha':
+      return addDaysToNormalizedDate(referenceDate, 1);
+    case 'depois de amanha':
+      return addDaysToNormalizedDate(referenceDate, 2);
+    case 'semana que vem':
+    case 'mesmo dia semana que vem':
+    case 'esse mesmo dia semana que vem':
+      return addDaysToNormalizedDate(referenceDate, 7);
+    default: {
+      const relativeDays = /^daqui(?: a)? (\d{1,3}) dias?$/.exec(normalizedInput);
+      if (!relativeDays) {
+        return null;
+      }
+
+      const days = Number(relativeDays[1]);
+      if (!Number.isSafeInteger(days) || days < 0 || days > 365) {
+        return null;
+      }
+
+      return addDaysToNormalizedDate(referenceDate, days);
+    }
+  }
 }
 
 export function parseTimeInput(input: string): string | null {

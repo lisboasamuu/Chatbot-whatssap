@@ -448,7 +448,10 @@ export class ConversationEngine {
     session: ConversationSession,
     text: string,
   ): Promise<ConversationResult> {
-    const date = parseDateInput(text);
+    const date = parseDateInput(
+      text,
+      this.appointmentService.currentLocalDate(),
+    );
 
     if (!date) {
       return this.result(session, INVALID_DATE_REPLY, 'SCHEDULING_DATE');
@@ -734,7 +737,10 @@ export class ConversationEngine {
       return this.recoverFlow(session);
     }
 
-    const date = parseDateInput(text);
+    const date = parseDateInput(
+      text,
+      this.appointmentService.currentLocalDate(),
+    );
     if (!date) {
       return this.result(session, INVALID_DATE_REPLY, 'RESCHEDULING_DATE');
     }

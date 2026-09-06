@@ -22,8 +22,9 @@ export function AppointmentsPage(): ReactNode {
   return (
     <section className="space-y-6">
       <div>
-        <p className="text-sm text-slate-400">Agenda futura</p>
-        <h2 className="text-3xl font-semibold tracking-tight">Agendamentos</h2>
+        <p className="brand-eyebrow">Agenda futura</p>
+        <h2 className="brand-page-title">Agendamentos</h2>
+        <p className="mt-2 brand-muted">Consulte os próximos compromissos registrados pelo atendimento.</p>
       </div>
       {error ? (
         <ErrorState message="Falha ao carregar os agendamentos." />

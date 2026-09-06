@@ -25,8 +25,9 @@ export function CustomersPage(): ReactNode {
   return (
     <section className="space-y-6">
       <div>
-        <p className="text-sm text-slate-400">Base de atendimento</p>
-        <h2 className="text-3xl font-semibold tracking-tight">Clientes</h2>
+        <p className="brand-eyebrow">Base de atendimento</p>
+        <h2 className="brand-page-title">Clientes</h2>
+        <p className="mt-2 brand-muted">Histórico e relacionamento dos clientes atendidos pelo canal.</p>
       </div>
       {customers.length === 0 ? (
         <EmptyState message="Nenhum cliente cadastrado." />
@@ -36,21 +37,17 @@ export function CustomersPage(): ReactNode {
             <Link
               key={customer.id}
               to={`/customers/${customer.id}`}
-              className="grid gap-2 rounded-xl border border-slate-800 bg-slate-900 p-4 transition hover:border-cyan-700 sm:grid-cols-[1fr_auto_auto] sm:items-center"
+              className="grid gap-3 rounded-2xl border border-brand-100 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-brand-300 hover:shadow-soft sm:grid-cols-[1fr_auto_auto] sm:items-center"
             >
-              <div>
-                <p className="font-medium">{customer.name ?? customer.externalId}</p>
-                {customer.name ? (
-                  <p className="text-sm text-slate-400">{customer.externalId}</p>
-                ) : null}
-                <p className="font-mono text-xs text-slate-500">{customer.id}</p>
+              <div className="min-w-0">
+                <p className="font-semibold text-brand-900">{customer.name ?? customer.externalId}</p>
+                {customer.name ? <p className="mt-0.5 text-sm text-slate-500">{customer.externalId}</p> : null}
+                <p className="mt-1 break-all font-mono text-xs text-slate-400">{customer.id}</p>
               </div>
-              <p className="text-sm text-slate-400">
-                Criado em {new Date(customer.createdAt).toLocaleString('pt-BR')}
-              </p>
-              <p className="text-sm text-slate-300">
+              <p className="text-sm text-slate-500">Criado em {new Date(customer.createdAt).toLocaleString('pt-BR')}</p>
+              <span className="inline-flex w-fit rounded-full bg-brand-100 px-2.5 py-1 text-xs font-semibold text-brand-900">
                 {customer.appointmentCount} agendamento(s)
-              </p>
+              </span>
             </Link>
           ))}
         </div>

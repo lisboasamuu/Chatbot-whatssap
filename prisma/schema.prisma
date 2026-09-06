@@ -73,6 +73,7 @@ model Company {
   timezone         String                @default("America/Sao_Paulo")
   customers        Customer[]
   settings         CompanySettings?
+  credential       CompanyCredential?
   businessHours    BusinessHour[]
   messageTemplates MessageTemplate[]
   reminders        AppointmentReminder[]
@@ -93,6 +94,7 @@ model CompanySettings {
   depositValue     Int?
   remindersEnabled Boolean     @default(false)
   reminderOffsets  Int[]       @default([])
+  whatsappEnabled  Boolean     @default(true)
   createdAt        DateTime    @default(now())
   updatedAt        DateTime    @updatedAt
 }
@@ -205,4 +207,30 @@ model AppointmentReminder {
   @@unique([companyId, appointmentId, offsetMinutes, scheduledFor])
   @@index([companyId, status, scheduledFor])
   @@index([companyId, status, nextAttemptAt])
+}
+
+model CompanyCredential {
+  id           String           @id @default(cuid())
+  companyId    String           @unique
+  company      Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  email        String           @unique
+  passwordHash String
+  sessions     CompanySession[]
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([companyId])
+}
+
+model CompanySession {
+  id           String            @id @default(cuid())
+  credentialId String
+  credential   CompanyCredential @relation(fields: [credentialId], references: [id], onDelete: Cascade)
+  tokenHash    String            @unique
+  createdAt    DateTime          @default(now())
+  lastSeenAt   DateTime          @default(now())
+  expiresAt    DateTime
+
+  @@index([credentialId, expiresAt])
+  @@index([expiresAt])
 }

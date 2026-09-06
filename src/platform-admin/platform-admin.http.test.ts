@@ -35,7 +35,7 @@ class PlatformRepository implements PlatformAdminRepository {
     createdAt:new Date('2026-08-30T00:00:00Z'),updatedAt:new Date('2026-08-30T00:00:00Z'),
     customerCount:0,appointmentCount:0,businessHours:[],messageTemplates:[],
     settings:{pixEnabled:false,pixKey:null,pixRecipientName:null,depositType:'NONE',depositValue:null},
-    reminders:{enabled:false,offsets:[]},
+    reminders:{enabled:false,offsets:[]},whatsappEnabled:true,access:{configured:false,email:null},
   };
   async listCompanies():Promise<PlatformCompanySummary[]>{ return [this.company]; }
   async getCompany(id:string){ return id===this.company.id?this.company:null; }
@@ -45,6 +45,7 @@ class PlatformRepository implements PlatformAdminRepository {
   async replaceMessageTemplates(id:string,_templates:MessageTemplateInput[]){ return id===this.company.id; }
   async upsertSettings(id:string,_settings:CompanySettingsInput){ return id===this.company.id; }
   async updateReminderConfiguration(id:string,_configuration:ReminderConfigurationInput){ return id===this.company.id; }
+  async upsertCompanyAccess(id:string,_email:string,_passwordHash:string|null){ return id===this.company.id; }
   async getTotals(){ return {totalCompanies:1,activeCompanies:1,inactiveCompanies:0,totalAppointments:0}; }
 }
 

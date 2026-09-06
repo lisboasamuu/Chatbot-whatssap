@@ -1,4 +1,5 @@
 import { findUnsupportedPlaceholder } from '../message-templates/message-template.js';
+import { hashPassword } from '../company-auth/password.js';
 import type { PlatformAdminRepository } from './platform-admin.repository.js';
 import type {
   BusinessHourInput, CompanySettingsInput, CompanyStatus, DepositType,
@@ -165,4 +166,33 @@ export class PlatformAdminService {
     }
     return this.getCompany(id);
   }
+  public async updateCompanyAccess(id: string, raw: unknown): Promise<PlatformCompanyDetail> {
+    if (!raw || typeof raw !== 'object') throw new PlatformValidationError('Acesso empresarial inválido.');
+    const record = raw as Record<string, unknown>;
+    const email = typeof record.email === 'string' ? record.email.trim().toLowerCase() : '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+      throw new PlatformValidationError('E-mail empresarial inválido.');
+    }
+    const current = await this.getCompany(id);
+    const password = typeof record.password === 'string' ? record.password : '';
+    if (!current.access.configured && !password) {
+      throw new PlatformValidationError('Defina uma senha no primeiro provisionamento.');
+    }
+    if (password && (password.length < 12 || password.length > 200)) {
+      throw new PlatformValidationError('A senha deve ter entre 12 e 200 caracteres.');
+    }
+    const passwordHash = password ? await hashPassword(password) : null;
+    try {
+      if (!(await this.repository.upsertCompanyAccess(id, email, passwordHash))) {
+        throw new PlatformNotFoundError('Empresa não encontrada.');
+      }
+    } catch (error) {
+      if ((error as { code?: string }).code === 'P2002') {
+        throw new PlatformValidationError('Este e-mail já está em uso.');
+      }
+      throw error;
+    }
+    return this.getCompany(id);
+  }
+
 }

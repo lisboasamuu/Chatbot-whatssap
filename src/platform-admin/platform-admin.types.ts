@@ -27,9 +27,12 @@ export interface ReminderSettings {
   enabled: boolean;
   offsets: ReminderOffsetMinutes[];
 }
+export interface PlatformCompanyAccess { configured: boolean; email: string | null; }
 export interface PlatformCompanyDetail extends PlatformCompanySummary {
   businessHours: BusinessHourInput[];
   messageTemplates: MessageTemplateInput[];
   settings: CompanySettingsInput;
   reminders: ReminderSettings;
+  whatsappEnabled: boolean;
+  access: PlatformCompanyAccess;
 }
