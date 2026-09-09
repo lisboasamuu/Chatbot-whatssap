@@ -1,0 +1,16 @@
+node_modules
+dashboard
+dist
+coverage
+
+.git
+.gitignore
+
+.env
+.env.*
+
+.wwebjs_auth
+.wwebjs_cache
+
+*.log
+README.md

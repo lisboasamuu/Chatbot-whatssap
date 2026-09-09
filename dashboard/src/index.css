@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color-scheme: light;
+  background: #F9FBFF;
+  color: #172033;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
+  background: #F9FBFF;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: #F9FBFF;
+}
+
+button,
+input,
+textarea,
+select {
+  max-width: 100%;
+  font: inherit;
+}
+
+img,
+svg {
+  max-width: 100%;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: #B0D4FE;
+  color: #0F195C;
+}
+
+@layer components {
+  .field {
+    @apply mt-2 min-w-0 w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-300/30 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500;
+  }
+
+  .time-field {
+    @apply min-w-0 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm sm:w-auto text-slate-900 outline-none transition focus:border-brand-500 focus:ring-4 focus:ring-brand-300/30;
+  }
+
+  .brand-card {
+    @apply min-w-0 rounded-2xl border border-brand-100 bg-white p-4 shadow-soft sm:p-5;
+  }
+
+  .brand-card-muted {
+    @apply min-w-0 rounded-2xl border border-brand-100 bg-brand-50 p-4 sm:p-5;
+  }
+
+  .brand-button {
+    @apply inline-flex items-center justify-center rounded-xl bg-brand-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-900 focus:outline-none focus:ring-4 focus:ring-brand-300/40 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .brand-button-secondary {
+    @apply inline-flex items-center justify-center rounded-xl border border-brand-300 bg-white px-4 py-2.5 text-sm font-semibold text-brand-900 transition hover:border-brand-500 hover:bg-brand-100 focus:outline-none focus:ring-4 focus:ring-brand-300/35 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .brand-button-danger {
+    @apply inline-flex items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-700 transition hover:bg-red-50 focus:outline-none focus:ring-4 focus:ring-red-100 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .brand-eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.22em] text-brand-700;
+  }
+
+  .brand-page-title {
+    @apply mt-1 text-2xl font-semibold tracking-tight text-brand-900 sm:text-3xl;
+  }
+
+  .brand-muted {
+    @apply text-sm leading-6 text-slate-500;
+  }
+
+  .brand-link {
+    @apply font-medium text-brand-700 transition hover:text-brand-900 hover:underline;
+  }
+
+  .brand-watermark {
+    @apply pointer-events-none select-none opacity-[0.045] mix-blend-multiply;
+  }
+}

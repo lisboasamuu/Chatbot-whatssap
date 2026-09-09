@@ -1,612 +1,586 @@
-# Fase 1 — Motor de Conversação
-Autor: Samuel Lisboa
+# Código NS — Plataforma SaaS de Atendimento e Agendamentos via WhatsApp
 
-Implementação da **Fase 1** do projeto de atendimento e automação via WhatsApp.
+Criado por **Samuel Lisboa**.
 
-Nesta fase foi introduzido um **Motor de Conversação determinístico e desacoplado do WhatsApp**, responsável por processar mensagens normalizadas, manter o estado temporário de cada conversa e produzir respostas.
+> Plataforma multiempresa para atendimento, agendamentos e automações via WhatsApp, com dashboard web, PostgreSQL, administração centralizada e isolamento por empresa.
 
-A integração construída na Fase 0 foi preservada.
+**Instagram:** [@codigonsbr](https://www.instagram.com/codigonsbr)
 
 ---
 
-## Objetivo
+## Visão geral
 
-Separar as regras de conversação da integração com `whatsapp-web.js`.
+O projeto começou como uma integração incremental com WhatsApp e evoluiu para uma aplicação SaaS multiempresa.
 
-O fluxo da aplicação passa a ser:
+Hoje a solução reúne:
 
-```text
-WhatsApp
-   ↓
-WhatsApp Layer
-   ↓
-Normalização da mensagem
-   ↓
-Conversation Engine
-   ↓
-Estado da conversa
-   ↓
-Resposta
-   ↓
-WhatsApp
-```
+- integração com WhatsApp via `whatsapp-web.js`;
+- motor de conversação com máquina de estados;
+- persistência PostgreSQL com Prisma;
+- agendamento, cancelamento e remarcação;
+- validação de datas, horários e disponibilidade;
+- suporte a entradas como `hoje`, `amanhã`, `depois de amanhã` e `semana que vem`;
+- dashboard empresarial em React;
+- cadastro e consulta de clientes;
+- configuração de horários comerciais;
+- templates de mensagens;
+- lembretes automáticos;
+- arquitetura multiempresa;
+- autenticação separada para empresas e Platform Admin;
+- sessão empresarial persistida;
+- runtime de WhatsApp independente por empresa;
+- identidade visual Código NS;
+- interface responsiva para mobile, tablet e desktop;
+- configuração de Pix/antecipação preparada para uso futuro.
 
-A camada WhatsApp continua responsável apenas pela comunicação com o WhatsApp.
+> **Importante:** Pix/antecipação ainda não processa pagamentos. A Fase 6 continua adiada.
 
-O Motor de Conversação é responsável por:
+---
 
-* receber mensagens normalizadas;
-* identificar o estado atual da conversa;
-* validar a entrada;
-* executar regras determinísticas;
-* realizar transições de estado;
-* produzir uma resposta;
-* atualizar o estado temporário da conversa.
+## Status do roadmap
+
+| Etapa | Status |
+| --- | --- |
+| Fase 0 — Integração WhatsApp | ✅ |
+| Fase 1 — Motor de Conversação | ✅ |
+| Fase 2 — PostgreSQL | ✅ |
+| Fase 3 — Agendamentos | ✅ |
+| Fase 4 — Dashboard React | ✅ |
+| Fase 5 — Multiempresa | ✅ |
+| Fase 5.5 — Platform Admin / Company Configuration | ✅ |
+| Fase 6 — Pagamentos | ⏸️ Adiada |
+| Fase 7 — Lembretes Automáticos | ✅ |
+| Fase 7.5 — Company Access / Production Readiness | ✅ |
+| Identidade visual Código NS | ✅ |
+| Responsive UI / Mobile Polish | ✅ |
+| IA / linguagem natural avançada | 🔜 Futuro |
+| Analytics | 🔜 Futuro |
+
+---
+
+## Stack
+
+### Backend
+
+- Node.js
+- TypeScript
+- PostgreSQL
+- Prisma ORM
+- `whatsapp-web.js`
+- ESLint
+
+### Frontend
+
+- React
+- TypeScript
+- Vite
+- Tailwind CSS
+- Vitest
+- ESLint
 
 ---
 
 ## Arquitetura
 
-A estrutura relevante do projeto passa a ser:
+```text
+Cliente WhatsApp
+      │
+      ▼
+WhatsAppProvider
+      │
+      ▼
+ConversationEngine
+      │
+      ├────────────► AppointmentService
+      │
+      ▼
+Stores / Repositories
+      │
+      ▼
+Prisma
+      │
+      ▼
+PostgreSQL
+```
+
+Dashboard:
 
 ```text
-src/
-├── index.ts
-│
-├── conversation/
-│   ├── conversation.types.ts
-│   ├── conversation.store.ts
-│   ├── conversation.engine.ts
-│   └── conversation.engine.test.ts
-│
-└── whatsapp/
-    ├── whatsapp.client.ts
-    └── whatsapp.events.ts
-```
-
-### `conversation.types.ts`
-
-Contém os tipos utilizados internamente pelo Motor de Conversação.
-
-Entre eles:
-
-* estado da conversa;
-* entrada normalizada;
-* resultado do processamento;
-* sessão armazenada em memória.
-
-Nenhum desses tipos depende de `whatsapp-web.js`.
-
----
-
-### `conversation.store.ts`
-
-Responsável pelo armazenamento temporário do estado das conversas.
-
-Nesta fase o armazenamento utiliza:
-
-```text
-Map<string, ConversationSession>
-```
-
-Cada conversa é identificada pelo seu `conversationId`.
-
-O estado existe apenas em memória.
-
-Portanto:
-
-> Reiniciar a aplicação apaga os estados das conversas.
-
-Isso é comportamento esperado na Fase 1.
-
-A persistência permanente pertence a uma fase posterior.
-
----
-
-### `conversation.engine.ts`
-
-Contém a máquina de estados e as regras de conversação.
-
-O engine recebe dados internos simples, conceitualmente:
-
-```ts
-{
-  conversationId,
-  text,
-  type
-}
-```
-
-e retorna:
-
-```ts
-{
-  reply,
-  state
-}
-```
-
-O engine:
-
-* não importa `whatsapp-web.js`;
-* não cria clientes WhatsApp;
-* não envia mensagens diretamente;
-* não acessa banco de dados;
-* não conhece QR Code ou autenticação;
-* não depende de infraestrutura externa.
-
-Isso permite testar toda a lógica conversacional sem iniciar o WhatsApp.
-
----
-
-### `whatsapp.events.ts`
-
-Continua responsável pelos eventos provenientes do WhatsApp.
-
-Para mensagens recebidas, sua responsabilidade agora é:
-
-```text
-receber evento
-→ validar evento
-→ normalizar mensagem
-→ chamar ConversationEngine
-→ receber resultado
-→ enviar resposta
-```
-
-As regras da máquina de estados não ficam no listener do WhatsApp.
-
-Os eventos existentes da Fase 0 foram preservados, incluindo:
-
-* QR Code;
-* autenticação;
-* cliente pronto;
-* falha de autenticação;
-* mensagem recebida;
-* desconexão.
-
----
-
-## Máquina de estados
-
-A Fase 1 utiliza uma máquina de estados mínima:
-
-```text
-INITIAL
+Empresa
    │
-   │ mensagem textual válida
    ▼
-ACTIVE
+React Dashboard
    │
-   │ novas mensagens válidas
-   └──────────────► ACTIVE
+   ▼
+Company Auth / Session
+   │
+   ▼
+Company Context
+   │
+   ▼
+API / Services
+   │
+   ▼
+Repositories
+   │
+   ▼
+PostgreSQL
 ```
 
-### `INITIAL`
-
-Estado inicial de toda nova conversa.
-
-Quando uma mensagem textual válida é processada:
-
-```text
-INITIAL → ACTIVE
-```
-
-### `ACTIVE`
-
-Indica que a conversa já foi iniciada.
-
-Novas mensagens válidas mantêm:
-
-```text
-ACTIVE → ACTIVE
-```
-
-Nenhum estado relacionado a agendamento, serviços, pagamentos ou IA foi criado nesta fase.
+O Platform Admin possui autenticação e sessão separadas do acesso empresarial.
 
 ---
 
-## Estado por conversa
+## Multiempresa
 
-Cada `conversationId` possui estado independente.
+A aplicação usa banco compartilhado com isolamento por `companyId`.
 
-Exemplo:
+Cada empresa possui seu próprio contexto de:
 
-```text
-Usuário A → ACTIVE
-Usuário B → INITIAL
-```
+- clientes;
+- conversas;
+- agendamentos;
+- configurações;
+- horários;
+- templates;
+- lembretes;
+- credenciais;
+- sessão web;
+- conexão WhatsApp.
 
-Uma conversa não interfere no estado de outra.
-
-O armazenamento é realizado pelo `ConversationStore`.
-
----
-
-## Comportamento atual
-
-### Mensagem textual válida
-
-Uma mensagem válida recebe:
-
-```text
-Olá! Sua mensagem foi recebida com sucesso.
-```
-
-Esse comportamento preserva a resposta utilizada na Fase 0.
-
-Na primeira mensagem válida:
-
-```text
-INITIAL → ACTIVE
-```
-
-Nas mensagens seguintes:
-
-```text
-ACTIVE → ACTIVE
-```
+O tenant é resolvido no servidor a partir da sessão autenticada. O frontend não é fonte de confiança para definir `companyId`.
 
 ---
 
-## Entradas inválidas
+## WhatsApp por empresa
 
-Entradas como:
-
-```text
-""
-"   "
-```
-
-não causam exceções.
-
-O motor retorna:
+Empresas ativas possuem runtime isolado.
 
 ```text
-Desculpe, não entendi.
+CompanyRuntimeManager
+        │
+        ├── Empresa A
+        │   ├── WhatsAppProvider
+        │   ├── ConversationEngine
+        │   ├── AppointmentService
+        │   └── Reminder Worker
+        │
+        └── Empresa B
+            ├── WhatsAppProvider
+            ├── ConversationEngine
+            ├── AppointmentService
+            └── Reminder Worker
 ```
 
-Uma entrada inválida também não avança uma conversa `INITIAL` para `ACTIVE`.
+A autenticação usa `LocalAuth` separada por empresa.
+
+O logout do dashboard **não desconecta** a sessão do WhatsApp.
 
 ---
 
-## Mensagens não suportadas
+## Agendamentos
 
-Tipos de mensagem ainda não suportados pelo Motor de Conversação utilizam o fallback:
+O fluxo permite:
+
+- criar;
+- listar;
+- cancelar;
+- remarcar;
+- validar data e horário;
+- impedir horários passados;
+- respeitar horário comercial;
+- detectar conflito de slot.
+
+Datas são normalizadas internamente como:
 
 ```text
-Desculpe, não entendi.
+YYYY-MM-DD
 ```
 
-Não foi implementado processamento avançado de mídia nesta fase.
+E podem ser exibidas como:
+
+```text
+DD/MM/AAAA
+```
+
+Também são aceitas expressões comuns como:
+
+```text
+hoje
+amanhã
+amanha
+depois de amanhã
+semana que vem
+esse mesmo dia semana que vem
+daqui a 3 dias
+```
+
+A resolução considera o timezone da empresa.
 
 ---
 
-## Proteção contra loops e eventos indesejados
+## Lembretes automáticos
 
-A camada WhatsApp continua ignorando eventos que não devem entrar no Motor de Conversação, incluindo:
+Presets disponíveis:
 
-* mensagens enviadas pelo próprio cliente;
-* mensagens de status;
-* mensagens de grupos.
+```text
+24 horas antes
+12 horas antes
+4 horas antes
+1 hora antes
+30 minutos antes
+```
 
-Isso evita respostas duplicadas e loops causados pelas próprias mensagens enviadas pela aplicação.
+Os lembretes utilizam persistência em banco e worker periódico, evitando depender apenas de timers em memória.
 
 ---
 
-## Tratamento de erros
+## Dashboard empresarial
 
-Erros de entrada são tratados pelo próprio Motor de Conversação através de respostas controladas.
+Áreas atuais:
 
-Erros técnicos inesperados são capturados na fronteira da integração.
+- Dashboard;
+- Agendamentos;
+- Clientes;
+- Configurações;
+- WhatsApp.
 
-O usuário recebe uma mensagem genérica:
+Configurações incluem:
+
+- horários comerciais;
+- mensagens;
+- lembretes;
+- dados Pix;
+- antecipação.
+
+A interface usa a identidade visual **Código NS** e foi ajustada para mobile, tablet e desktop (Com responsividade).
+
+No mobile, a navegação principal utiliza drawer/menu de hamburguer.
+
+---
+
+## Platform Admin
+
+Permite:
+
+- visualizar empresas;
+- cadastrar empresas;
+- ativar/desativar empresas;
+- configurar acesso empresarial;
+- editar timezone;
+- configurar horários;
+- mensagens;
+- lembretes;
+- Pix/antecipação.
+
+---
+
+## Pix / Antecipação
+
+A interface permite cadastrar:
+
+- chave Pix;
+- favorecido;
+- antecipação desativada;
+- valor fixo;
+- percentual.
+
+Valores monetários são exibidos no padrão brasileiro:
 
 ```text
-Desculpe, ocorreu um erro ao processar sua mensagem.
+0,01
+1,00
+10,50
+150,90
 ```
 
-Detalhes técnicos são registrados apenas no terminal.
+Internamente, valores monetários podem continuar representados em centavos inteiros.
 
-Falhas ao enviar mensagens pelo WhatsApp também são tratadas separadamente.
+> Nenhum Pix é cobrado ou processado automaticamente nesta etapa.
 
-O Motor de Conversação não implementa retry de rede.
+---
+
+## Estrutura principal
+
+```text
+Chatbot-whatssap/
+├── dashboard/
+│   ├── public/brand/
+│   ├── src/
+│   └── package.json
+├── prisma/
+│   ├── migrations/
+│   └── schema.prisma
+├── src/
+│   ├── appointments/
+│   ├── conversation/
+│   ├── database/
+│   ├── message-templates/
+│   ├── reminders/
+│   ├── whatssap/
+│   └── ...
+├── package.json
+├── tsconfig.json
+└── README.md
+```
+
+> `src/whatssap` mantém o nome histórico já existente no projeto.
+
+---
+
+## Pré-requisitos
+
+- Node.js
+- npm
+- PostgreSQL
+
+```bash
+node --version
+npm --version
+psql --version
+```
 
 ---
 
 ## Instalação
 
-Instale as dependências existentes do projeto:
+Na raiz:
 
 ```bash
 npm install
 ```
 
-A Fase 1 não adiciona frameworks, banco de dados ou bibliotecas de máquina de estados.
-
----
-
-## Build
-
-Compile o projeto:
+Dashboard:
 
 ```bash
-npm run build
+npm --prefix dashboard ci
+```
+
+Durante desenvolvimento também pode usar:
+
+```bash
+npm --prefix dashboard install
 ```
 
 ---
 
-## Lint
+## Variáveis de ambiente
 
-Execute:
+Crie `.env` na raiz conforme `.env.example`.
 
-```bash
-npm run lint
+Variáveis importantes da arquitetura atual:
+
+```env
+DATABASE_URL="postgresql://USER:PASSWORD@localhost:5432/chatbot?schema=public"
+PLATFORM_ADMIN_PASSWORD="..." (senha para entrar na plataforma de adm)
+SESSION_SECRET="..."
+APP_ORIGIN="http://localhost:5173"
+```
+
+Dependendo do ambiente:
+
+```env
+TRUST_PROXY="..."
+WHATSAPP_AUTH_PATH="..."
+NODE_ENV="development"
+```
+
+Não versione:
+
+```text
+.env
+.wwebjs_auth/
+.wwebjs_cache/
+node_modules/
+dist/
+dashboard/node_modules/
+dashboard/dist/
 ```
 
 ---
 
-## Testes automatizados
-
-Execute:
+## Prisma
 
 ```bash
-npm test
+npx prisma validate
+npx prisma generate
+npx prisma migrate status
 ```
 
-Os testes do Motor de Conversação utilizam recursos nativos do Node.js:
+Em desenvolvimento, quando houver migration nova:
 
-* `node:test`;
-* `node:assert`.
+```bash
+npx prisma migrate dev
+```
 
-Não foi necessário adicionar Jest ou Vitest.
+### Regra importante
 
-### Cenários cobertos
-
-Os testes verificam:
-
-1. criação de uma nova conversa;
-2. transição `INITIAL → ACTIVE`;
-3. manutenção de uma conversa `ACTIVE`;
-4. isolamento entre diferentes `conversationId`;
-5. texto vazio;
-6. texto contendo apenas espaços;
-7. mensagem não suportada;
-8. execução do engine sem criar um cliente WhatsApp.
-
-O Motor de Conversação pode, portanto, ser testado sem autenticar ou inicializar o WhatsApp.
+**Nunca use `prisma migrate reset` como solução para divergência de migrations neste projeto!!**
 
 ---
 
-## Desenvolvimento
+## Executando
 
-Inicie a aplicação normalmente:
+Backend:
 
 ```bash
 npm run dev
 ```
 
-Quando existir uma sessão válida da Fase 0, o `LocalAuth` reutiliza a autenticação armazenada.
+Dashboard:
 
-Exemplo de inicialização:
+```bash
+npm run dashboard:dev
+```
+
+ou:
+
+```bash
+npm --prefix dashboard run dev
+```
+
+Frontend em desenvolvimento:
 
 ```text
-[WhatsApp] Inicializando cliente...
-[WhatsApp] Autenticado.
-[WhatsApp] Cliente conectado e pronto.
+http://localhost:5173
+```
+
+Precisa fazer cada um num terminal para poder rodar os dois ao mesmo tempo.
+
+---
+
+## Validação
+
+Backend:
+
+```bash
+npm run build
+npm run lint
+npm test
+npx prisma validate
+npx prisma migrate status
+```
+
+Dashboard:
+
+```bash
+npm run dashboard:build
+npm run dashboard:lint
+npm run dashboard:test
 ```
 
 ---
 
-## Teste manual
+## Segurança
 
-### Primeira mensagem
+Princípios atuais:
 
-Envie uma mensagem textual para a conta conectada.
+- senha empresarial não armazenada em texto puro;
+- `scrypt` para hash de senha;
+- comparação segura;
+- token de sessão opaco;
+- hash do token persistido;
+- cookie `HttpOnly`;
+- expiração absoluta e por inatividade;
+- tenant resolvido no servidor;
+- Platform Admin separado do Company Access;
+- sessões WhatsApp fora do Git;
+- preparação para HTTPS/proxy em produção.
 
-O terminal deve registrar o recebimento e o processamento:
+Segurança deve continuar sendo revisada antes e depois da publicação.
+
+---
+
+## Git
+
+Branch principal:
 
 ```text
-[WhatsApp] Mensagem recebida: {
-  from: '...',
-  type: 'chat'
-}
-
-[Conversation] Mensagem processada: {
-  conversationId: '...',
-  state: 'ACTIVE'
-}
+main
 ```
 
-O usuário deve receber:
+Antes de alterações importantes use:
 
-```text
-Olá! Sua mensagem foi recebida com sucesso.
+```bash
+git branch --show-current
+git status
+git log --oneline --decorate -10
 ```
 
-Isso confirma:
+Evite operações muito destrutivas tipo:
 
 ```text
-INITIAL → ACTIVE
+git reset --hard
+git clean
+git restore .
 ```
 
 ---
 
-### Segunda mensagem
+## Próximas etapas
 
-Envie outra mensagem utilizando o mesmo usuário.
-
-A conversa deve continuar:
-
-```text
-ACTIVE → ACTIVE
-```
-
-sem voltar para `INITIAL`.
-
----
-
-### Dois usuários
-
-Utilize dois números diferentes.
-
-Fluxo esperado:
-
-```text
-Usuário A
-→ primeira mensagem
-→ ACTIVE
-
-Usuário B
-→ primeira mensagem
-→ ACTIVE
-
-Usuário A
-→ segunda mensagem
-→ continua ACTIVE
-```
-
-Os estados devem permanecer independentes.
+- calibração final;
+- testes end-to-end;
+- logs e observabilidade;
+- backup e recuperação;
+- exclusão segura de empresas e seus dados;
+- refinamento de segurança;
+- hospedagem;
+- HTTPS e domínio;
+- estratégia de manutenção;
+- pagamentos quando a Fase 6 for retomada;
+- linguagem natural avançada/IA;
+- analytics.
 
 ---
 
-## Persistência
+## Identidade Código NS
 
-Existem dois tipos diferentes de estado no projeto.
-
-### Sessão WhatsApp
-
-A autenticação do WhatsApp continua sendo gerenciada pelo `LocalAuth`.
-
-Ela é persistida localmente e pode ser reutilizada após reiniciar a aplicação enquanto continuar válida.
-
-Os arquivos de autenticação não devem ser versionados.
-
-### Estado da conversa
-
-O estado do Motor de Conversação existe somente em memória.
+Paleta de cores escolhida:
 
 ```text
-ConversationStore
-→ Map
-→ memória do processo
+#0F195C  brand-900
+#334DAF  brand-700
+#7096D1  brand-500
+#B0D4FE  brand-300
+#E8F2FE  brand-100
+#F9FBFF  brand-50
 ```
 
-Ao reiniciar a aplicação:
+Assets:
 
 ```text
-ACTIVE → perdido
+dashboard/public/brand/
 ```
 
-Uma nova mensagem será tratada novamente como uma conversa `INITIAL`.
-
-Isso é intencional na Fase 1.
+Use logo branca em fundos escuros e logo preta em superfícies claras.
 
 ---
 
-## Validação realizada
-
-A integração foi validada com uma conta WhatsApp real.
-
-Foram confirmados:
-
-* build TypeScript;
-* ESLint;
-* testes automatizados;
-* inicialização da aplicação;
-* reutilização da autenticação existente;
-* conexão do cliente;
-* recebimento de mensagens;
-* passagem da mensagem pelo Motor de Conversação;
-* transição para `ACTIVE`;
-* envio de respostas;
-* preservação do funcionamento da Fase 0.
-
-Exemplo observado:
+## Estado atual
 
 ```text
-[WhatsApp] Inicializando cliente...
-[WhatsApp] Autenticado.
-[WhatsApp] Cliente conectado e pronto.
-
-[WhatsApp] Mensagem recebida: {
-  from: '...',
-  type: 'chat'
-}
-
-[Conversation] Mensagem processada: {
-  conversationId: '...',
-  state: 'ACTIVE'
-}
-```
-
----
-
-## Limitações atuais
-
-A Fase 1 é propositalmente simples.
-
-Ainda não existem:
-
-* persistência permanente do estado das conversas;
-* PostgreSQL;
-* Prisma;
-* agendamentos;
-* serviços ou profissionais;
-* calendário;
-* dashboard;
-* multiempresa;
-* pagamentos;
-* lembretes;
-* interpretação de linguagem natural;
-* OpenAI API;
-* LLM;
-* agentes;
-* analytics.
-
-Esses componentes pertencem às próximas fases do projeto.
-
----
-
-## Princípio arquitetural
-
-O WhatsApp é um canal de entrada e saída, não o núcleo das regras de conversação.
-
-A arquitetura atual mantém:
-
-```text
-WhatsApp Layer
-      │
-      ▼
+WhatsApp
+   +
 Conversation Engine
+   +
+Agendamentos
+   +
+PostgreSQL
+   +
+Multiempresa
+   +
+Dashboard React
+   +
+Company Access
+   +
+Platform Admin
+   +
+Lembretes
+   +
+Configuração operacional
+   +
+Interface responsiva
 ```
 
-O `ConversationEngine` não depende do WhatsApp.
-
-Isso significa que futuramente outro canal poderá fornecer uma entrada normalizada equivalente sem exigir que as regras da máquina de estados sejam reescritas.
-
----
-
-## Status
-
-**FASE 1 — CONCLUÍDA E VALIDADA**
-
-O projeto possui agora:
-
-```text
-FASE 0
-WhatsApp funcional
-        │
-        ▼
-FASE 1
-Motor de Conversação
-        │
-        ├── entrada normalizada
-        ├── máquina de estados
-        ├── estado independente por conversa
-        ├── armazenamento temporário em memória
-        ├── fallback determinístico
-        └── testes automatizados
-```
-
-A aplicação está preparada para avançar para a próxima fase do roadmap sem que funcionalidades dessa fase tenham sido antecipadas.
+A próxima grande etapa é **calibrar, proteger, hospedar e preparar a base existente para produção**. E também incluir gateway de pagamentos, o que é um tema para próximos estudos e evolução.

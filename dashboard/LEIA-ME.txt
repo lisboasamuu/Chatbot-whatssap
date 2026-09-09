@@ -1,0 +1,19 @@
+CÓDIGO NS — REFATORAÇÃO VISUAL DO DASHBOARD
+
+Conteúdo:
+- dashboard/ completo, sem node_modules e sem dist
+- logos oficiais em dashboard/public/brand/
+- identidade visual Código NS aplicada ao painel empresarial e Platform Admin
+
+Validações executadas no frontend:
+- npm run build: PASSOU
+- npm run lint: PASSOU
+- npm test: PASSOU (6 arquivos / 13 testes)
+
+Aplicação:
+1. Faça backup/commit do estado atual do seu projeto.
+2. Substitua/mescle a pasta dashboard/ deste pacote sobre a pasta dashboard/ do projeto.
+3. Rode npm --prefix dashboard ci se necessário.
+4. Rode npm run dashboard:build, npm run dashboard:lint e npm run dashboard:test no projeto principal.
+
+Nenhuma API, regra de negócio, autenticação, Prisma, migration ou integração WhatsApp foi alterada neste pacote.

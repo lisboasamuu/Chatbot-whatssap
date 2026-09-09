@@ -1,7 +1,7 @@
-import qrcode from 'qrcode-terminal';
 import type { Client, Message } from 'whatsapp-web.js';
 
 import type { ConversationEngine } from '../conversation/conversation.engine.js';
+import type { ConversationInactivityManager } from '../conversation/conversation-inactivity.manager.js';
 import type { ConversationMessageType } from '../conversation/conversation.types.js';
 
 const INTERNAL_ERROR_REPLY =
@@ -33,10 +33,13 @@ async function sendReply(message: Message, reply: string): Promise<boolean> {
 async function handleIncomingMessage(
   message: Message,
   conversationEngine: ConversationEngine,
+  inactivityManager: ConversationInactivityManager,
 ): Promise<void> {
   if (shouldIgnoreMessage(message)) {
     return;
   }
+
+  inactivityManager.cancel(message.from);
 
   console.log('[WhatsApp] Mensagem recebida:', {
     from: message.from,
@@ -68,22 +71,33 @@ async function handleIncomingMessage(
           '[Database] Resposta enviada, mas não foi possível registrar o histórico de saída.',
         );
       }
+
+      if (result.ended) {
+        inactivityManager.cancel(message.from);
+      } else {
+        inactivityManager.touch(message.from);
+      }
     }
   } catch {
     console.error('[Conversation] Erro inesperado ao processar mensagem.');
-    await sendReply(message, INTERNAL_ERROR_REPLY);
+
+    const sent = await sendReply(message, INTERNAL_ERROR_REPLY);
+
+    if (sent) {
+      inactivityManager.touch(message.from);
+    }
   }
 }
 
 export function registerWhatsAppEvents(
   client: Client,
   conversationEngine: ConversationEngine,
+  inactivityManager: ConversationInactivityManager,
 ): void {
-  client.on('qr', (qr: string) => {
+  client.on('qr', () => {
     console.log(
-      '[WhatsApp] QR Code gerado. Escaneie com o aplicativo do WhatsApp:',
+      '[WhatsApp] QR Code disponível para leitura no dashboard.',
     );
-    qrcode.generate(qr, { small: true });
   });
 
   client.on('authenticated', () => {
@@ -99,11 +113,13 @@ export function registerWhatsAppEvents(
   });
 
   client.on('message', (message: Message) => {
-    void handleIncomingMessage(message, conversationEngine).catch(
-      (error: unknown) => {
-        console.error('[WhatsApp] Erro ao processar mensagem:', error);
-      },
-    );
+    void handleIncomingMessage(
+      message,
+      conversationEngine,
+      inactivityManager,
+    ).catch((error: unknown) => {
+      console.error('[WhatsApp] Erro ao processar mensagem:', error);
+    });
   });
 
   client.on('disconnected', (reason: string) => {
