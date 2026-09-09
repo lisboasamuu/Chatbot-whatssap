@@ -1,4 +1,3 @@
-import qrcode from 'qrcode-terminal';
 import type { Client, Message } from 'whatsapp-web.js';
 
 import type { ConversationEngine } from '../conversation/conversation.engine.js';
@@ -81,7 +80,9 @@ async function handleIncomingMessage(
     }
   } catch {
     console.error('[Conversation] Erro inesperado ao processar mensagem.');
+
     const sent = await sendReply(message, INTERNAL_ERROR_REPLY);
+
     if (sent) {
       inactivityManager.touch(message.from);
     }
@@ -93,11 +94,10 @@ export function registerWhatsAppEvents(
   conversationEngine: ConversationEngine,
   inactivityManager: ConversationInactivityManager,
 ): void {
-  client.on('qr', (qr: string) => {
+  client.on('qr', () => {
     console.log(
-      '[WhatsApp] QR Code gerado. Escaneie com o aplicativo do WhatsApp:',
+      '[WhatsApp] QR Code disponível para leitura no dashboard.',
     );
-    qrcode.generate(qr, { small: true });
   });
 
   client.on('authenticated', () => {
