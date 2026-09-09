@@ -31,7 +31,15 @@ export class WhatsAppProvider implements ReminderMessenger {
   ) {
     this.client = new Client({
       authStrategy: new LocalAuth({ dataPath: authDataPath, clientId: companyId }),
-      puppeteer: { headless: true },
+      puppeteer: {
+		headless: true,
+		executablePath: process.env.PUPPETEER_EXECUTABLE_PATH?.trim() || undefined,
+		args: [
+			'--no-sandbox',
+			'--disable-setuid-sandbox',
+			'--disable-dev-shm-usage',
+		],
+		},
     });
 
     this.inactivityManager = new ConversationInactivityManager(
