@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 const MIGRATION_PATH =
-  'prisma/migrations/20260904023000_add_company_access_production_readiness/migration.sql';
+  'prisma/migrations/20260904140300_add_company_access_production_readiness/migration.sql';
 
 test('company access migration adds credentials and durable web sessions without destructive data operations', async () => {
   const sql = await readFile(MIGRATION_PATH, 'utf8');
