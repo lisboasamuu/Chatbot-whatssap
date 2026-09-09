@@ -23,12 +23,20 @@ interface ApiErrorBody {
   };
 }
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL?.trim() || '').replace(/\/+$/, '');
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
     credentials: 'include',
     ...init,
-    headers: { Accept: 'application/json', ...(init.body ? { 'Content-Type': 'application/json' } : {}), ...(init.headers ?? {}) },
+    headers: {
+      Accept: 'application/json',
+      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(init.headers ?? {}),
+    },
   });
+
+  // restante permanece igual
 
   if (!response.ok) {
     if (response.status === 401 && !path.startsWith('/api/platform/') && !path.startsWith('/api/auth/')) {
