@@ -8,6 +8,7 @@ const navigation = [
   { to: '/', label: 'Dashboard' },
   { to: '/appointments', label: 'Agendamentos' },
   { to: '/customers', label: 'Clientes' },
+  { to: '/automations', label: 'Automações' },
   { to: '/settings', label: 'Configurações' },
   { to: '/whatsapp', label: 'WhatsApp' },
 ];

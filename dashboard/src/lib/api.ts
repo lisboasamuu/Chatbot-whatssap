@@ -15,6 +15,8 @@ import type {
   AuthenticatedCompany,
   CompanyConfiguration,
   WhatsAppStatus,
+  Automation,
+  AutomationInput,
 } from '../types';
 
 interface ApiErrorBody {
@@ -53,6 +55,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     }
     throw new Error(message);
   }
+
+  if (response.status === 204) return undefined as T;
 
   return (await response.json()) as T;
 }
@@ -116,6 +120,18 @@ export const api = {
     request<{ customers: Customer[] }>('/api/customers').then(
       ({ customers }) => customers,
     ),
+  createCustomer: (input: { name: string; phone: string }): Promise<Customer> =>
+    request<{ customer: Customer }>('/api/customers', { method: 'POST', body: JSON.stringify(input) }).then(({ customer }) => customer),
+  getAutomations: (): Promise<Automation[]> =>
+    request<{ automations: Automation[] }>('/api/automations').then(({ automations }) => automations),
+  createAutomation: (input: AutomationInput): Promise<Automation> =>
+    request<{ automation: Automation }>('/api/automations', { method: 'POST', body: JSON.stringify(input) }).then(({ automation }) => automation),
+  updateAutomation: (id: string, input: AutomationInput): Promise<Automation> =>
+    request<{ automation: Automation }>(`/api/automations/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(input) }).then(({ automation }) => automation),
+  setAutomationActive: (id: string, isActive: boolean): Promise<Automation> =>
+    request<{ automation: Automation }>(`/api/automations/${encodeURIComponent(id)}/status`, { method: 'PATCH', body: JSON.stringify({ isActive }) }).then(({ automation }) => automation),
+  deleteAutomation: (id: string): Promise<void> =>
+    request(`/api/automations/${encodeURIComponent(id)}`, { method: 'DELETE' }).then(() => undefined),
   getCustomer: (customerId: string): Promise<CustomerDetail> =>
     request<{ customer: CustomerDetail }>(
       `/api/customers/${encodeURIComponent(customerId)}`,

@@ -89,7 +89,7 @@ async function main(): Promise<void> {
     server = createAdminHttpServer(
       legacyService,
       { service: platformService, auth: platformAuth, refreshCompanyRuntimes: () => runtimeManager!.refresh() },
-      { auth: companyHttpAuth, repository: adminRepository, configuration: platformService, runtime: runtimeManager },
+      { auth: companyHttpAuth, repository: adminRepository, configuration: platformService, runtime: runtimeManager, prisma },
       { appOrigin, production },
     );
 

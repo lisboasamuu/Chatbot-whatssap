@@ -98,3 +98,64 @@ export interface WhatsAppStatus { state:WhatsAppConnectionState; ready:boolean; 
 export interface PlatformSummary {
   totalCompanies:number; activeCompanies:number; inactiveCompanies:number; totalAppointments:number;
 }
+
+export type AutomationType = 'INBOUND' | 'SCHEDULED';
+export type AutomationScheduleType = 'ONE_TIME' | 'WEEKLY';
+export type AutomationRunStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'PARTIAL' | 'FAILED';
+
+export interface AutomationVariation {
+  id: string;
+  value: string;
+  normalizedValue: string;
+}
+
+export interface AutomationRecipient {
+  id: string;
+  customerId: string;
+  customer: Customer;
+}
+
+export interface AutomationRun {
+  id: string;
+  scheduledFor: string;
+  status: AutomationRunStatus;
+  totalRecipients: number;
+  sentCount: number;
+  failedCount: number;
+  completedAt: string | null;
+}
+
+export interface Automation {
+  id: string;
+  name: string;
+  type: AutomationType;
+  isActive: boolean;
+  responseBody: string | null;
+  messageBody: string | null;
+  scheduleType: AutomationScheduleType | null;
+  oneTimeDate: string | null;
+  oneTimeTime: string | null;
+  weekdays: Weekday[];
+  times: string[];
+  nextRunAt: string | null;
+  variations: AutomationVariation[];
+  recipients: AutomationRecipient[];
+  runs: AutomationRun[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AutomationInput {
+  name: string;
+  type: AutomationType;
+  isActive: boolean;
+  variations?: string[];
+  responseBody?: string;
+  messageBody?: string;
+  scheduleType?: AutomationScheduleType;
+  oneTimeDate?: string | null;
+  oneTimeTime?: string | null;
+  weekdays?: Weekday[];
+  times?: string[];
+  recipientIds?: string[];
+}

@@ -9,6 +9,7 @@ import { CustomerDetailPage } from './pages/CustomerDetailPage';
 import { CustomersPage } from './pages/CustomersPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { WhatsAppPage } from './pages/WhatsAppPage';
+import { AutomationsPage } from './pages/AutomationsPage';
 import { PlatformAdmin } from './platform/PlatformAdmin';
 import type { AuthenticatedCompany } from './types';
 
@@ -52,6 +53,7 @@ function CompanyApp(): ReactNode {
         <Route path="/appointments" element={<AppointmentsPage />} />
         <Route path="/customers" element={<CustomersPage />} />
         <Route path="/customers/:customerId" element={<CustomerDetailPage />} />
+        <Route path="/automations" element={<AutomationsPage />} />
         <Route path="/settings" element={<CompanySettingsPage />} />
         <Route path="/whatsapp" element={<WhatsAppPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />

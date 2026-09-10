@@ -1280,3 +1280,45 @@ test('ACTIVE: explicit sair marks the chat as ended', async () => {
   assert.equal(result.ended, true);
   assert.equal(result.reply, 'Atendimento encerrado. Até logo! 👋');
 });
+
+test('AUTOMATION: custom inbound reply is used after no native intent matches', async () => {
+  const conversationStore = new InMemoryConversationStore();
+  const appointmentStore = new InMemoryAppointmentStore();
+  const engine = new ConversationEngine(
+    conversationStore,
+    new AppointmentService(appointmentStore, NOW),
+    undefined,
+    { findReply: async (text) => text.includes('serviços') ? 'Trabalhamos com automação.' : null },
+  );
+  const result = await engine.handle({ conversationId: 'user-a', text: 'Quais serviços vocês oferecem?' });
+  assert.equal(result.reply, 'Trabalhamos com automação.');
+  assert.equal(result.state, 'ACTIVE');
+});
+
+test('AUTOMATION: native reschedule synonyms have priority over custom rules', async () => {
+  const conversationStore = new InMemoryConversationStore();
+  const appointmentStore = new InMemoryAppointmentStore();
+  const engine = new ConversationEngine(
+    conversationStore,
+    new AppointmentService(appointmentStore, NOW),
+    undefined,
+    { findReply: async () => 'CUSTOM' },
+  );
+  const result = await engine.handle({ conversationId: 'user-a', text: 'reagendar' });
+  assert.equal(result.reply, 'Você não possui agendamentos para remarcar.');
+});
+
+test('AUTOMATION: active conversation flow consumes selections before custom rules', async () => {
+  let matcherCalls = 0;
+  const conversationStore = new InMemoryConversationStore();
+  const engine = new ConversationEngine(
+    conversationStore,
+    new AppointmentService(new InMemoryAppointmentStore(), NOW),
+    undefined,
+    { findReply: async () => { matcherCalls += 1; return 'CUSTOM'; } },
+  );
+  await engine.handle({ conversationId: 'user-a', text: 'agendar' });
+  const result = await engine.handle({ conversationId: 'user-a', text: '1' });
+  assert.equal(result.state, 'SCHEDULING_DATE');
+  assert.equal(matcherCalls, 0);
+});
