@@ -66,6 +66,32 @@ enum DepositType {
   PERCENTAGE
 }
 
+enum AutomationType {
+  INBOUND
+  SCHEDULED
+}
+
+enum AutomationScheduleType {
+  ONE_TIME
+  WEEKLY
+}
+
+enum AutomationRunStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum AutomationDeliveryStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+  SKIPPED
+}
+
 model Company {
   id               String                @id @default(cuid())
   name             String
@@ -77,6 +103,8 @@ model Company {
   businessHours    BusinessHour[]
   messageTemplates MessageTemplate[]
   reminders        AppointmentReminder[]
+  automations      Automation[]
+  automationRuns   AutomationRun[]
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
 
@@ -127,15 +155,17 @@ model MessageTemplate {
 }
 
 model Customer {
-  id            String         @id @default(cuid())
-  companyId     String
-  company       Company        @relation(fields: [companyId], references: [id], onDelete: Restrict)
-  externalId    String
-  name          String?
-  conversations Conversation[]
-  appointments  Appointment[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                   String                @id @default(cuid())
+  companyId            String
+  company              Company               @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  externalId           String
+  name                 String?
+  conversations        Conversation[]
+  appointments         Appointment[]
+  automationRecipients AutomationRecipient[]
+  automationDeliveries AutomationDelivery[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   @@unique([companyId, externalId])
   @@unique([companyId, id])
@@ -233,4 +263,109 @@ model CompanySession {
 
   @@index([credentialId, expiresAt])
   @@index([expiresAt])
+}
+
+model Automation {
+  id                  String                  @id @default(cuid())
+  companyId           String
+  company             Company                 @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  name                String
+  type                AutomationType
+  isActive            Boolean                 @default(true)
+  responseBody        String?
+  messageBody         String?
+  scheduleType        AutomationScheduleType?
+  oneTimeDate         String?
+  oneTimeTime         String?
+  weekdays            Weekday[]               @default([])
+  times               String[]                @default([])
+  nextRunAt           DateTime?
+  scheduleVersion     Int                     @default(1)
+  processingStartedAt DateTime?
+  deletedAt           DateTime?
+  variations          AutomationVariation[]
+  recipients          AutomationRecipient[]
+  runs                AutomationRun[]
+  createdAt           DateTime                @default(now())
+  updatedAt           DateTime                @updatedAt
+
+  @@unique([companyId, id])
+  @@index([companyId, type, isActive, deletedAt])
+  @@index([companyId, nextRunAt, processingStartedAt])
+}
+
+model AutomationVariation {
+  id              String     @id @default(cuid())
+  companyId       String
+  automationId    String
+  automation      Automation @relation(fields: [companyId, automationId], references: [companyId, id], onDelete: Cascade)
+  value           String
+  normalizedValue String
+  createdAt       DateTime   @default(now())
+
+  @@unique([automationId, normalizedValue])
+  @@index([companyId, automationId])
+}
+
+model AutomationRecipient {
+  id           String     @id @default(cuid())
+  companyId    String
+  automationId String
+  customerId   String
+  automation   Automation @relation(fields: [companyId, automationId], references: [companyId, id], onDelete: Cascade)
+  customer     Customer   @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  createdAt    DateTime   @default(now())
+
+  @@unique([automationId, customerId])
+  @@index([companyId, automationId])
+  @@index([companyId, customerId])
+}
+
+model AutomationRun {
+  id              String               @id @default(cuid())
+  companyId       String
+  automationId    String
+  company         Company              @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  automation      Automation           @relation(fields: [companyId, automationId], references: [companyId, id], onDelete: Restrict)
+  scheduleVersion Int
+  scheduledFor    DateTime
+  status          AutomationRunStatus  @default(PENDING)
+  totalRecipients Int                  @default(0)
+  sentCount       Int                  @default(0)
+  failedCount     Int                  @default(0)
+  startedAt       DateTime?
+  completedAt     DateTime?
+  deliveries      AutomationDelivery[]
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@unique([companyId, id])
+  @@unique([automationId, scheduleVersion, scheduledFor])
+  @@index([companyId, status, scheduledFor])
+}
+
+model AutomationDelivery {
+  id                  String                   @id @default(cuid())
+  companyId           String
+  runId               String
+  customerId          String
+  run                 AutomationRun            @relation(fields: [companyId, runId], references: [companyId, id], onDelete: Cascade)
+  customer            Customer                 @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: Restrict)
+  recipient           String
+  recipientName       String?
+  body                String
+  status              AutomationDeliveryStatus @default(PENDING)
+  attempts            Int                      @default(0)
+  nextAttemptAt       DateTime
+  processingStartedAt DateTime?
+  dispatchStartedAt   DateTime?
+  sentAt              DateTime?
+  providerMessageId   String?
+  lastError           String?
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+
+  @@unique([runId, customerId])
+  @@index([companyId, status, nextAttemptAt])
+  @@index([companyId, runId, status])
 }

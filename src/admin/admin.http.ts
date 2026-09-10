@@ -13,6 +13,13 @@ import {
 } from '../platform-admin/platform-admin.http.js';
 import { AdminResourceNotFoundError, AdminService } from './admin.service.js';
 import type { AdminRepository } from './admin.repository.js';
+import type { PrismaClient } from '@prisma/client';
+import { AutomationService } from '../automations/automation.service.js';
+import {
+  AutomationNotFoundError,
+  AutomationValidationError,
+  type AutomationInput,
+} from '../automations/automation.types.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -22,6 +29,7 @@ export interface CompanyHttpDependencies {
   repository: AdminRepository;
   configuration: PlatformAdminService;
   runtime: CompanyRuntimeManager;
+  prisma?: PrismaClient;
 }
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
@@ -60,6 +68,15 @@ function customerRoute(pathname: string): { customerId: string; conversation: bo
   const match = /^\/api\/customers\/([^/]+)(\/conversation)?$/.exec(pathname);
   if (!match) return null;
   try { return { customerId: decodeURIComponent(match[1]!), conversation: Boolean(match[2]) }; } catch { return null; }
+}
+function automationRoute(pathname: string): { automationId: string; action: 'detail' | 'status' } | null {
+  const match = /^\/api\/automations\/([^/]+)(\/status)?$/.exec(pathname);
+  if (!match) return null;
+  try {
+    return { automationId: decodeURIComponent(match[1]!), action: match[2] ? 'status' : 'detail' };
+  } catch {
+    return null;
+  }
 }
 function mutation(method: string | undefined): boolean {
   return method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
@@ -154,6 +171,53 @@ async function handleRequest(
       undefined,
       context.timezone,
     );
+    const automations = company.prisma
+      ? new AutomationService(company.prisma, context.companyId, context.timezone)
+      : null;
+
+    if (url.pathname === '/api/automations' && request.method === 'GET' && automations) {
+      sendJson(response, 200, { automations: await automations.list() });
+      return;
+    }
+    if (url.pathname === '/api/automations' && request.method === 'POST' && automations) {
+      const body = await readJson(request);
+      sendJson(response, 201, { automation: await automations.create(body as unknown as AutomationInput) });
+      return;
+    }
+    if (url.pathname === '/api/customers' && request.method === 'POST' && automations) {
+      const body = await readJson(request);
+      const customer = await automations.createManualCustomer(body.name, body.phone);
+      sendJson(response, 201, { customer });
+      return;
+    }
+    const automation = automationRoute(url.pathname);
+    if (automation && automations) {
+      if (automation.action === 'detail' && request.method === 'GET') {
+        sendJson(response, 200, { automation: await automations.get(automation.automationId) });
+        return;
+      }
+      if (automation.action === 'detail' && request.method === 'PUT') {
+        const body = await readJson(request);
+        sendJson(response, 200, { automation: await automations.update(automation.automationId, body as unknown as AutomationInput) });
+        return;
+      }
+      if (automation.action === 'detail' && request.method === 'DELETE') {
+        await automations.remove(automation.automationId);
+        response.statusCode = 204;
+        response.end();
+        return;
+      }
+      if (automation.action === 'status' && request.method === 'PATCH') {
+        const body = await readJson(request);
+        if (typeof body.isActive !== 'boolean') {
+          throw new AutomationValidationError('INVALID_INPUT', 'Informe se a automação está ativa.');
+        }
+        sendJson(response, 200, { automation: await automations.setActive(automation.automationId, body.isActive) });
+        return;
+      }
+      sendError(response, 405, 'METHOD_NOT_ALLOWED', 'Method not allowed.');
+      return;
+    }
 
     if (url.pathname === '/api/company/configuration' && request.method === 'GET') {
       const detail = await company.configuration.getCompany(context.companyId);
@@ -264,6 +328,8 @@ export function createAdminHttpServer(
     if (applyCors(request, response, security)) return;
     void handleRequest(request, response, service, platform, company).catch((error: unknown) => {
       if (handlePlatformError(response, error)) return;
+      if (error instanceof AutomationNotFoundError) { sendError(response, 404, 'NOT_FOUND', error.message); return; }
+      if (error instanceof AutomationValidationError) { sendError(response, 400, error.code, error.message); return; }
       if (error instanceof AdminResourceNotFoundError) { sendError(response, 404, 'NOT_FOUND', error.message); return; }
       if (error instanceof SyntaxError || (error instanceof Error && error.message === 'INVALID_JSON')) { sendError(response, 400, 'INVALID_JSON', 'JSON inválido.'); return; }
       if (error instanceof Error && error.message === 'REQUEST_BODY_TOO_LARGE') { sendError(response, 413, 'PAYLOAD_TOO_LARGE', 'Corpo da requisição muito grande.'); return; }

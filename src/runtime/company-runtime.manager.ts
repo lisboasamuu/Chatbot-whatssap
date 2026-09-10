@@ -8,6 +8,8 @@ import { PrismaReminderRepository } from '../database/prisma-reminder.repository
 import type { ReminderMessenger, ReminderSendResult } from '../reminders/reminder.messenger.js';
 import { AppointmentReminderWorker, ReminderScheduler } from '../reminders/reminder.worker.js';
 import { createWhatsAppProvider, type WhatsAppProvider, type WhatsAppStatus } from '../whatssap/whatsapp.client.js';
+import { AutomationService } from '../automations/automation.service.js';
+import { AutomationScheduler, AutomationWorker } from '../automations/automation.worker.js';
 
 const REFRESH_INTERVAL_MS = 30_000;
 
@@ -25,6 +27,7 @@ interface CompanyRuntime {
   engine: ConversationEngine;
   messenger: RuntimeMessenger;
   scheduler: ReminderScheduler;
+  automationScheduler: AutomationScheduler;
 }
 
 export interface ManagedWhatsAppStatus extends WhatsAppStatus {
@@ -96,14 +99,19 @@ export class CompanyRuntimeManager {
     );
     const engine = new ConversationEngine(
       new PrismaConversationStore(this.prisma, companyId), appointmentService, companyConfig,
+      new AutomationService(this.prisma, companyId, operationalConfig.timezone),
     );
     const messenger = new RuntimeMessenger();
     const scheduler = new ReminderScheduler(
       new AppointmentReminderWorker(new PrismaReminderRepository(this.prisma), messenger, companyId),
     );
-    const runtime = { companyId, engine, messenger, scheduler };
+    const automationScheduler = new AutomationScheduler(
+      new AutomationWorker(this.prisma, messenger, companyId),
+    );
+    const runtime = { companyId, engine, messenger, scheduler, automationScheduler };
     this.runtimes.set(companyId, runtime);
     scheduler.start();
+    automationScheduler.start();
     return runtime;
   }
 
@@ -135,6 +143,7 @@ export class CompanyRuntimeManager {
     if (!runtime) return;
     this.runtimes.delete(companyId);
     await runtime.scheduler.stop();
+    await runtime.automationScheduler.stop();
     await this.stopProvider(runtime, logout);
   }
 

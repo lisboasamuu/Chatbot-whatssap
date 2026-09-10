@@ -20,6 +20,8 @@ import type {
   ConversationSession,
   ConversationState,
 } from './conversation.types.js';
+import { normalizeInboundText } from '../automations/automation.matching.js';
+import type { InboundAutomationMatcher } from '../automations/automation.types.js';
 
 export const FALLBACK_REPLY = 'Desculpe, não entendi.';
 
@@ -52,12 +54,26 @@ export interface ConversationMessageTemplateProvider {
 const ACTIVE_COMMANDS = new Set([
   'agendar',
   'meus agendamentos',
-  'agendamentos',
   'cancelar agendamento',
   'remarcar agendamento',
-  'gostaria de marcar',
-  'quero marcar',
-  'marcar consulta'
+]);
+
+const COMMAND_ALIASES = new Map<string, string>([
+  ['agendar', 'agendar'],
+  ['marcar', 'agendar'],
+  ['marcar horario', 'agendar'],
+  ['gostaria de marcar', 'agendar'],
+  ['quero marcar', 'agendar'],
+  ['marcar consulta', 'agendar'],
+  ['meus agendamentos', 'meus agendamentos'],
+  ['meus horarios', 'meus agendamentos'],
+  ['agendamentos', 'meus agendamentos'],
+  ['cancelar', 'cancelar agendamento'],
+  ['cancelar agendamento', 'cancelar agendamento'],
+  ['remarcar', 'remarcar agendamento'],
+  ['remarcar agendamento', 'remarcar agendamento'],
+  ['reagendar', 'remarcar agendamento'],
+  ['reagendar agendamento', 'remarcar agendamento'],
 ]);
 
 const FLOW_STATES = new Set<ConversationState>([
@@ -74,7 +90,8 @@ const FLOW_STATES = new Set<ConversationState>([
 ]);
 
 function normalizeCommand(text: string): string {
-  return text.toLocaleLowerCase('pt-BR').trim().replace(/\s+/g, ' ');
+  const normalized = normalizeInboundText(text);
+  return COMMAND_ALIASES.get(normalized) ?? normalized;
 }
 
 function isAffirmative(command: string): boolean {
@@ -82,7 +99,7 @@ function isAffirmative(command: string): boolean {
 }
 
 function isNegative(command: string): boolean {
-  return command === 'não' || command === 'nao' || command === 'n';
+  return command === 'nao' || command === 'n';
 }
 
 function isExitCommand(command: string): boolean {
@@ -211,6 +228,7 @@ export class ConversationEngine {
     private readonly store: ConversationStore,
     private readonly appointmentService: AppointmentService,
     private readonly messageTemplates?: ConversationMessageTemplateProvider,
+    private readonly inboundAutomations?: InboundAutomationMatcher,
   ) {}
 
   private async template(
@@ -280,6 +298,11 @@ export class ConversationEngine {
     if (session.state === 'INITIAL') {
       if (ACTIVE_COMMANDS.has(command)) {
         return this.handleActive(session, command);
+      }
+
+      const automatedReply = await this.inboundAutomations?.findReply(text);
+      if (automatedReply) {
+        return this.transition(session, 'ACTIVE', null, automatedReply);
       }
 
       return this.transition(session, 'ACTIVE', null, await this.template('WELCOME'));
@@ -367,7 +390,7 @@ export class ConversationEngine {
 
 
       case 'meus agendamentos':
-      case 'agendamentos': {
+      {
         const appointments = await this.appointmentService.list(
           session.customerId,
         );
@@ -440,6 +463,10 @@ export class ConversationEngine {
         );
 
       default:
+        {
+          const automatedReply = await this.inboundAutomations?.findReply(command);
+          if (automatedReply) return this.result(session, automatedReply, 'ACTIVE');
+        }
         return this.result(session, await this.template('WELCOME'), 'ACTIVE');
     }
   }
