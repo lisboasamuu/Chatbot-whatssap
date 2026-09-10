@@ -136,21 +136,22 @@ export class PrismaReminderRepository implements ReminderRepository {
     now: Date,
     limit: number,
   ): Promise<AppointmentReminderRecord[]> {
+    const nowUtc = now.toISOString();
     const rows = await this.prisma.$queryRaw<AppointmentReminder[]>(Prisma.sql`
       UPDATE "AppointmentReminder" AS reminder
       SET
         "status" = 'PROCESSING',
         "attempts" = reminder."attempts" + 1,
-        "processingStartedAt" = ${now},
+        "processingStartedAt" = CAST(${nowUtc} AS timestamp(3)),
         "dispatchStartedAt" = NULL,
-        "updatedAt" = ${now}
+        "updatedAt" = CAST(${nowUtc} AS timestamp(3))
       WHERE reminder."id" IN (
         SELECT candidate."id"
         FROM "AppointmentReminder" AS candidate
         WHERE candidate."companyId" = ${companyId}
           AND candidate."status" = 'PENDING'
-          AND candidate."scheduledFor" <= ${now}
-          AND candidate."nextAttemptAt" <= ${now}
+          AND candidate."scheduledFor" <= CAST(${nowUtc} AS timestamp(3))
+          AND candidate."nextAttemptAt" <= CAST(${nowUtc} AS timestamp(3))
         ORDER BY candidate."nextAttemptAt" ASC, candidate."scheduledFor" ASC
         FOR UPDATE SKIP LOCKED
         LIMIT ${limit}
